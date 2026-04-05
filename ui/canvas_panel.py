@@ -54,6 +54,7 @@ class CanvasPanel(tk.Frame):
 
         self.canvas = tk.Canvas(
             canvas_container, bg="black", cursor="cross", highlightthickness=0,
+            takefocus=1  # Cho phép Canvas nhận tiêu điểm từ bàn phím
         )
         self.canvas.pack()
 
@@ -149,6 +150,7 @@ class CanvasPanel(tk.Frame):
     # ----------------------------------------------------------
     def _on_mouse_down(self, event):
         # Bắt đầu kéo và lưu điểm tọa độ xuất phát
+        self.canvas.focus_set()  # Chiếm lại tiêu điểm để phím Enter hoạt động cho việc gán nhãn
         self.start_x = min(max(event.x, 0), self.img_w_disp)
         self.start_y = min(max(event.y, 0), self.img_h_disp)
 

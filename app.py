@@ -1,5 +1,5 @@
 # ============================================================
-# app.py — Main application controller
+# app.py — Controller chính của ứng dụng
 # ============================================================
 import os
 import tkinter as tk
@@ -15,54 +15,55 @@ from ui.status_bar import StatusBar
 
 
 class YoloReviewerApp:
-    """Application controller that wires all UI panels with the DataManager."""
+    """Điều phối toàn bộ ứng dụng, kết nối các Panel giao diện với DataManager."""
 
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title(APP_TITLE)
         self.root.geometry(APP_GEOMETRY)
 
-        # --- State ---
+        # --- Trạng thái ---
         self.dataset_dir = ""
         self.image_paths: list[str] = []
         self.current_idx = 0
 
-        # --- Shared Tk variables ---
+        # --- Biến chung Tk ---
         self.mode_var = tk.StringVar(value="same_folder")
         self.selected_class = tk.IntVar(value=0)
 
-        # --- Data layer ---
+        # --- Lớp dữ liệu ---
         self.data_manager = DataManager()
 
-        # --- Build UI ---
+        # --- Khởi tạo giao diện ---
         self._setup_ui()
         self._bind_keys()
 
     # ----------------------------------------------------------
-    # UI Setup
+    # Khởi tạo giao diện
     # ----------------------------------------------------------
     def _setup_ui(self):
-        # Top toolbar
+        # Thanh công cụ trên cùng
         self.toolbar = Toolbar(
             self.root,
             mode_var=self.mode_var,
             on_load_dataset=self.load_dataset,
             on_save_labels=self.save_labels,
+            on_search=self.on_search_selected,
         )
         self.toolbar.pack(side=tk.TOP, fill=tk.X)
 
-        # Left class panel
+        # Bảng chọn nhãn bên trái
         self.class_panel = ClassPanel(self.root, selected_class=self.selected_class)
         self.class_panel.pack(side=tk.LEFT, fill=tk.Y)
 
-        # Bottom status bar (pack BEFORE center so it stays at the bottom)
+        # Thanh trạng thái dưới cùng
         self.status_bar = StatusBar(
             self.root,
-            text="Hướng dẫn: Kéo chuột để vẽ Box → Bấm Enter để chốt → Ctrl+Z để Undo → Left/Right để chuyển ảnh",
+            text="Phím tắt: Enter (Chốt), Ctrl+Z (Hoàn tác), Left/Right (Chuyển ảnh), Ctrl+S (Lưu)",
         )
         self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
-        # Center canvas panel
+        # Bảng hiển thị ảnh trung tâm
         self.canvas_panel = CanvasPanel(
             self.root,
             selected_class=self.selected_class,
@@ -72,13 +73,15 @@ class YoloReviewerApp:
         self.canvas_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
     def _bind_keys(self):
+        # Gắn phím tắt hệ thống
         self.root.bind("<Left>", lambda e: self.prev_image())
         self.root.bind("<Right>", lambda e: self.next_image())
         self.root.bind("<Return>", lambda e: self.canvas_panel.confirm_draft())
         self.root.bind("<Control-z>", lambda e: self.canvas_panel.undo_label())
+        self.root.bind("<Control-s>", lambda e: self.save_labels())
 
     # ----------------------------------------------------------
-    # Dataset Loading
+    # Tải tập dữ liệu
     # ----------------------------------------------------------
     def load_dataset(self):
         folder = filedialog.askdirectory()
@@ -100,32 +103,64 @@ class YoloReviewerApp:
         self.dataset_dir = folder
         self.image_paths = image_paths
         self.current_idx = 0
+        
+        # Cập nhật danh sách gợi ý tìm kiếm
+        basenames = [os.path.basename(p) for p in self.image_paths]
+        self.toolbar.update_search_list(basenames)
+        
         self.load_image()
 
     # ----------------------------------------------------------
-    # Image & Label Loading
+    # Tải hình ảnh và nhãn
     # ----------------------------------------------------------
     def load_image(self):
         if not self.image_paths:
             return
 
         img_path = self.image_paths[self.current_idx]
-        self.toolbar.set_info(
-            f"Ảnh {self.current_idx + 1}/{len(self.image_paths)}: {os.path.basename(img_path)}"
-        )
+        file_name = os.path.basename(img_path)
+        
+        # Cập nhật thanh công cụ
+        self.toolbar.set_info(f"Ảnh {self.current_idx + 1}/{len(self.image_paths)}: {file_name}")
+        self.toolbar.set_search_value(file_name)
 
-        # Open and display image
-        pil_image = Image.open(img_path)
-        self.canvas_panel.display_image(pil_image)
+        try:
+            # Mở và hiển thị hình ảnh
+            pil_image = Image.open(img_path)
+            self.canvas_panel.display_image(pil_image)
 
-        # Load existing labels
-        mode = self.mode_var.get()
-        txt_path = self.data_manager.get_label_path(img_path, mode)
-        labels = self.data_manager.load_labels(txt_path)
-        self.canvas_panel.set_labels(labels)
+            # Tải các nhãn hiện có
+            mode = self.mode_var.get()
+            txt_path = self.data_manager.get_label_path(img_path, mode)
+            labels = self.data_manager.load_labels(txt_path)
+            self.canvas_panel.set_labels(labels)
+            
+        except OSError as e:
+            messagebox.showerror("Lỗi ảnh", f"Không thể tải ảnh: {file_name}\nẢnh có thể bị hỏng (Truncated).\nError: {str(e)}")
+            # Nếu ảnh lỗi, tự động bỏ qua nếu người dùng nhấn OK hoặc xử lý tùy ý
+            return
 
     # ----------------------------------------------------------
-    # Label Saving
+    # Chức năng tìm kiếm và Nhảy đến ảnh
+    # ----------------------------------------------------------
+    def on_search_selected(self, event=None):
+        """Xử lý khi người dùng chọn tên ảnh trong ô tìm kiếm."""
+        target_name = self.toolbar.get_search_value()
+        if not target_name:
+            return
+            
+        # Tìm chỉ số ảnh có tên khớp (tìm chính xác hoặc gợi ý)
+        for idx, path in enumerate(self.image_paths):
+            if os.path.basename(path) == target_name:
+                self.current_idx = idx
+                self.load_image()
+                return
+        
+        # Nếu không tìm thấy chính xác, báo lỗi nhẹ
+        self.status_bar.set_text(f"Không tìm thấy ảnh: {target_name}")
+
+    # ----------------------------------------------------------
+    # Lưu nhãn
     # ----------------------------------------------------------
     def save_labels(self):
         if not self.image_paths:
@@ -138,10 +173,11 @@ class YoloReviewerApp:
         labels = self.canvas_panel.get_labels()
         self.data_manager.save_labels(txt_path, labels)
 
-        messagebox.showinfo("Đã lưu", f"Đã lưu nhãn cho ảnh: {os.path.basename(img_path)}")
+        self.status_bar.set_text(f"Đã lưu nhãn: {os.path.basename(img_path)}")
+        # messagebox.showinfo("Đã lưu", f"Đã lưu nhãn cho ảnh: {os.path.basename(img_path)}") # Tắt bớt popup phiền phức
 
     # ----------------------------------------------------------
-    # Navigation
+    # Điều hướng
     # ----------------------------------------------------------
     def prev_image(self):
         if self.current_idx > 0:

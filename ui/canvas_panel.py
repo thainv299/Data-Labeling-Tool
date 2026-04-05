@@ -1,5 +1,5 @@
 # ============================================================
-# canvas_panel.py — Center panel: navigation buttons + canvas + drawing logic
+# canvas_panel.py — Bảng trung tâm: nút điều hướng + Canvas + vẽ
 # ============================================================
 import tkinter as tk
 from PIL import Image, ImageTk
@@ -8,7 +8,7 @@ from core.config import CLASSES, COLORS
 
 
 class CanvasPanel(tk.Frame):
-    """Center panel containing ◀ prev | Canvas | ▶ next and all drawing/bbox logic."""
+    """Bảng trung tâm chứa ◀ prev | Canvas | ▶ next và toàn bộ logic vẽ khung nhãn."""
 
     def __init__(self, parent, selected_class: tk.IntVar, on_prev=None, on_next=None):
         super().__init__(parent, bg="#2c3e50")
@@ -17,28 +17,28 @@ class CanvasPanel(tk.Frame):
         self._on_prev = on_prev
         self._on_next = on_next
 
-        # Drawing state
+        # Trạng thái vẽ (Draft)
         self.draft_rect = None
         self.draft_coords = None  # (x1, y1, x2, y2)
         self.start_x = 0
         self.start_y = 0
 
-        # Image display properties
+        # Thuộc tính hiển thị ảnh
         self.img_w_disp = 1
         self.img_h_disp = 1
         self.photo = None
 
-        # Current labels: list of (cls_id, xc, yc, w, h)
+        # Danh sách nhãn hiện tại: (cls_id, xc, yc, w, h)
         self.current_labels: list[tuple] = []
 
         self._build()
         self._bind_mouse()
 
     # ----------------------------------------------------------
-    # Build UI
+    # Khởi tạo giao diện
     # ----------------------------------------------------------
     def _build(self):
-        # Previous button
+        # Nút Ảnh Trước
         self.btn_prev = tk.Button(
             self, text="◀", font=("Arial", 20, "bold"),
             command=self._on_prev, width=3,
@@ -48,7 +48,7 @@ class CanvasPanel(tk.Frame):
         )
         self.btn_prev.pack(side=tk.LEFT, fill=tk.Y)
 
-        # Canvas container (expand=True, NO fill → centers the canvas)
+        # Container chứa Canvas (expand=True để căn giữa)
         canvas_container = tk.Frame(self, bg="#2c3e50")
         canvas_container.pack(side=tk.LEFT, expand=True)
 
@@ -57,7 +57,7 @@ class CanvasPanel(tk.Frame):
         )
         self.canvas.pack()
 
-        # Next button
+        # Nút Ảnh Sau
         self.btn_next = tk.Button(
             self, text="▶", font=("Arial", 20, "bold"),
             command=self._on_next, width=3,
@@ -68,29 +68,30 @@ class CanvasPanel(tk.Frame):
         self.btn_next.pack(side=tk.RIGHT, fill=tk.Y)
 
     def _bind_mouse(self):
+        # Gắn sự kiện chuột trên Canvas
         self.canvas.bind("<ButtonPress-1>", self._on_mouse_down)
         self.canvas.bind("<B1-Motion>", self._on_mouse_drag)
         self.canvas.bind("<ButtonRelease-1>", self._on_mouse_up)
 
     # ----------------------------------------------------------
-    # Image Display
+    # Hiển thị hình ảnh
     # ----------------------------------------------------------
     def display_image(self, pil_image: Image.Image):
-        """Scale and display a PIL Image on the canvas. Returns (img_w_disp, img_h_disp)."""
+        """Tỷ lệ và hiển thị ảnh PIL lên canvas. Trả về kích thước thực hiển thị."""
         real_w, real_h = pil_image.size
 
-        # Calculate available space (subtract approx button widths)
+        # Tính toán không gian trống có sẵn
         self.update_idletasks()
         frame_w = self.winfo_width() - 100
         frame_h = self.winfo_height()
         if frame_w < 100:
-            frame_w, frame_h = 800, 600  # Fallback
+            frame_w, frame_h = 800, 600
 
         scale = min(frame_w / real_w, frame_h / real_h)
         self.img_w_disp = int(real_w * scale)
         self.img_h_disp = int(real_h * scale)
 
-        # Resize canvas to exactly match the scaled image
+        # Cập nhật Canvas khớp với kích thước ảnh hiển thị
         self.canvas.config(width=self.img_w_disp, height=self.img_h_disp)
 
         img_resized = pil_image.resize(
@@ -101,28 +102,28 @@ class CanvasPanel(tk.Frame):
         self.canvas.delete("all")
         self.canvas.create_image(0, 0, anchor=tk.NW, image=self.photo)
 
-        # Reset draft
+        # Reset nháp vẽ
         self.draft_rect = None
         self.draft_coords = None
 
     # ----------------------------------------------------------
-    # Label Drawing
+    # Quản lý nhãn
     # ----------------------------------------------------------
     def set_labels(self, labels: list[tuple]):
-        """Set the current label list and redraw."""
+        """Gán danh sách nhãn hiện tại và vẽ lại."""
         self.current_labels = list(labels)
         self.draw_all_labels()
 
     def get_labels(self) -> list[tuple]:
-        """Return the current label list."""
+        """Trả về danh sách các nhãn đang hiển thị."""
         return list(self.current_labels)
 
     def draw_all_labels(self):
-        """Redraw all confirmed bounding boxes on the canvas."""
+        """Vẽ lại toàn bộ bounding box đã chốt lên canvas."""
         self.canvas.delete("label_box")
 
         for cls_id, xc, yc, w, h in self.current_labels:
-            # Convert YOLO format (0.0-1.0) to canvas pixels
+            # Chuyển đổi định dạng YOLO sang tọa độ pixel pixels
             px = xc * self.img_w_disp
             py = yc * self.img_h_disp
             bw = w * self.img_w_disp
@@ -144,13 +145,15 @@ class CanvasPanel(tk.Frame):
             )
 
     # ----------------------------------------------------------
-    # Mouse Events (Box Drawing)
+    # Sự kiện chuột (Vẽ Box)
     # ----------------------------------------------------------
     def _on_mouse_down(self, event):
+        # Bắt đầu kéo và lưu điểm tọa độ xuất phát
         self.start_x = min(max(event.x, 0), self.img_w_disp)
         self.start_y = min(max(event.y, 0), self.img_h_disp)
 
     def _on_mouse_drag(self, event):
+        # Kéo và vẽ box tạm thời (nét đứt)
         cur_x = min(max(event.x, 0), self.img_w_disp)
         cur_y = min(max(event.y, 0), self.img_h_disp)
 
@@ -158,7 +161,6 @@ class CanvasPanel(tk.Frame):
             self.canvas.delete(self.draft_rect)
 
         color = COLORS[self.selected_class.get() % len(COLORS)]
-        # Vẽ box tạm thời (nét đứt)
         self.draft_rect = self.canvas.create_rectangle(
             self.start_x, self.start_y, cur_x, cur_y,
             outline=color, width=2, dash=(4, 4),
@@ -166,24 +168,24 @@ class CanvasPanel(tk.Frame):
         self.draft_coords = (self.start_x, self.start_y, cur_x, cur_y)
 
     def _on_mouse_up(self, event):
-        # Mouse thả ra, box vẫn ở dạng nháp chờ bấm Enter
+        """Thả chuột — nhãn ở trạng thái chờ chốt (Draft)."""
         pass
 
     # ----------------------------------------------------------
-    # Draft Confirmation & Undo
+    # Chốt nhãn & Hoàn tác
     # ----------------------------------------------------------
     def confirm_draft(self):
-        """Confirm the draft rectangle as a new label (called on Enter)."""
+        """Chốt khung nhãn tạm thời (Khi nhấn Enter)."""
         if self.draft_coords:
             x1, y1, x2, y2 = self.draft_coords
 
-            # Tính toán tọa độ YOLO (0.0 - 1.0)
+            # Tính toán sang tọa độ chuẩn YOLO (0.0 - 1.0)
             xc = ((x1 + x2) / 2) / self.img_w_disp
             yc = ((y1 + y2) / 2) / self.img_h_disp
             w = abs(x2 - x1) / self.img_w_disp
             h = abs(y2 - y1) / self.img_h_disp
 
-            if w > 0.01 and h > 0.01:  # Chống box quá nhỏ do click nhầm
+            if w > 0.01 and h > 0.01:
                 self.current_labels.append((self.selected_class.get(), xc, yc, w, h))
 
             self.canvas.delete(self.draft_rect)
@@ -192,7 +194,7 @@ class CanvasPanel(tk.Frame):
             self.draw_all_labels()
 
     def undo_label(self):
-        """Remove the last label (called on Ctrl+Z)."""
+        """Xóa nhãn được thêm vào cuối cùng (Khi nhấn Ctrl+Z)."""
         if self.current_labels:
             self.current_labels.pop()
             self.draw_all_labels()

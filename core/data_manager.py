@@ -1,5 +1,5 @@
 # ============================================================
-# data_manager.py — Dataset I/O logic (no tkinter dependency)
+# data_manager.py — Logic xử lý dữ liệu (không phụ thuộc vào giao diện)
 # ============================================================
 import os
 import glob
@@ -7,43 +7,28 @@ import pathlib
 
 
 class DataManager:
-    """Handles dataset scanning, label path resolution, and label file I/O.
-
-    This class is intentionally free of any tkinter dependency so it can be
-    tested and reused independently of the GUI.
-    """
+    """Xử lý quét tập dữ liệu, phân giải đường dẫn nhãn và đọc/ghi tệp nhãn."""
 
     # ----------------------------------------------------------
-    # Folder Scanning
+    # Quét thư mục
     # ----------------------------------------------------------
     @staticmethod
     def scan_folder(folder: str, mode: str) -> list[str]:
-        """Scan a folder for image files based on the selected mode.
-
-        Args:
-            folder: Root directory chosen by the user.
-            mode: "same_folder" or "yolo_dataset".
-
-        Returns:
-            Sorted list of absolute image paths.
-
-        Raises:
-            FileNotFoundError: If mode is "yolo_dataset" and <folder>/images/ is missing.
-        """
+        """Tải danh sách các tệp ảnh dựa trên chế độ đã chọn."""
         if mode == "yolo_dataset":
             images_dir = os.path.join(folder, "images")
             if not os.path.isdir(images_dir):
                 raise FileNotFoundError(
                     f"Không tìm thấy thư mục 'images/' bên trong:\n{folder}\n\n"
-                    "Vui lòng chọn thư mục ROOT chứa 'images/' và 'labels/'."
+                    "Vui lòng chọn thư mục gốc chứa 'images/' và 'labels/'."
                 )
-            # Recursively scan all subdirectories (train/, val/, test/, etc.)
+            # Quét đệ quy tất cả các thư mục con (train/, val/, test/, v.v.)
             image_paths = sorted(
                 glob.glob(os.path.join(images_dir, "**", "*.jpg"), recursive=True)
                 + glob.glob(os.path.join(images_dir, "**", "*.png"), recursive=True)
             )
         else:
-            # Mode 1: Same Folder — scan directly
+            # Chế độ 1: Cùng thư mục — quét trực tiếp trong thư mục được chọn
             image_paths = sorted(
                 glob.glob(os.path.join(folder, "*.jpg"))
                 + glob.glob(os.path.join(folder, "*.png"))
@@ -51,23 +36,15 @@ class DataManager:
         return image_paths
 
     # ----------------------------------------------------------
-    # Label Path Resolution
+    # Phân giải đường dẫn nhãn
     # ----------------------------------------------------------
     @staticmethod
     def get_label_path(img_path: str, mode: str) -> str:
-        """Return the correct .txt label path based on the current mode.
-
-        Mode 1 (same_folder):
-            Label is next to the image: img01.jpg -> img01.txt
-
-        Mode 2 (yolo_dataset):
-            Replace 'images' directory component with 'labels':
-            dataset/images/train/img01.jpg -> dataset/labels/train/img01.txt
-        """
+        """Trả về đường dẫn tệp .txt tương ứng dựa trên chế độ hiện tại."""
         if mode == "yolo_dataset":
             p = pathlib.Path(img_path)
             parts = list(p.parts)
-            # Find the LAST occurrence of 'images' in the path parts
+            # Tìm vị trí CUỐI CÙNG của thành phần 'images' trong đường dẫn
             idx = None
             for i in range(len(parts) - 1, -1, -1):
                 if parts[i].lower() == "images":
@@ -78,14 +55,15 @@ class DataManager:
             label_path = pathlib.Path(*parts).with_suffix(".txt")
             return str(label_path)
         else:
+            # Nhãn nằm ngay cạnh ảnh
             return os.path.splitext(img_path)[0] + ".txt"
 
     # ----------------------------------------------------------
-    # Label File I/O
+    # Đọc/Ghi tệp nhãn
     # ----------------------------------------------------------
     @staticmethod
     def load_labels(txt_path: str) -> list[tuple]:
-        """Read YOLO label file and return a list of (cls_id, xc, yc, w, h) tuples."""
+        """Đọc tệp nhãn YOLO và trả về danh sách các bộ (cls_id, xc, yc, w, h)."""
         labels = []
         if os.path.exists(txt_path):
             with open(txt_path, "r") as f:
@@ -103,10 +81,7 @@ class DataManager:
 
     @staticmethod
     def save_labels(txt_path: str, labels: list[tuple]) -> None:
-        """Write a list of (cls_id, xc, yc, w, h) tuples to a YOLO label file.
-
-        Automatically creates parent directories if they don't exist.
-        """
+        """Ghi danh sách nhãn ra tệp YOLO .txt. Tự động tạo thư mục nếu chưa có."""
         os.makedirs(os.path.dirname(txt_path), exist_ok=True)
         with open(txt_path, "w") as f:
             for cls_id, xc, yc, w, h in labels:

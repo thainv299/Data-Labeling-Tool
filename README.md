@@ -1,54 +1,86 @@
-# 🕵️‍♂️ YOLO Data Labeling Tool - Bộ công cụ gán nhãn chuyên nghiệp
+# 🏷️ Data Labeling Tool
 
-Chào mừng bạn đến với **Data Labeling Tool**, một bộ công cụ mạnh mẽ được thiết kế để tự động hóa và tối ưu hóa quy trình gán nhãn (labeling) cho các mô hình YOLO.
+Bộ công cụ hỗ trợ **gán nhãn dữ liệu YOLO** chuyên nghiệp — tự động trích xuất & gán nhãn từ video, đánh giá và chỉnh sửa nhãn thủ công trên giao diện trực quan.
 
-## 🌟 Tính năng chính
+## 📸 Demo
 
-### 🤖 1. Tự động gán nhãn (Auto-Annotator)
-- Trích xuất ảnh từ video nguồn theo khoảng thời gian tùy chỉnh.
-- Sử dụng mô hình YOLO (`.pt`) có sẵn để tự động phát hiện và gán nhãn cho các đối tượng.
-- Lưu trữ kết quả dưới định dạng `.jpg` và `.txt` chuẩn YOLO.
+![Giao diện chính của ứng dụng](assets/demo1.png)
 
-### 🔍 2. Công cụ Đánh giá & Chỉnh sửa (Review Tool)
-- **Chế độ Kép (Dual-Mode)**: 
-    - *Gán nhãn mới*: Tất cả ảnh và nhãn nằm chung một thư mục.
-    - *Review YOLO Dataset*: Hỗ trợ cấu trúc thư mục chuẩn (`images/` và `labels/`) với các tập con phức tạp (`train/`, `val/`, `test/`).
-- **Tìm kiếm Thông minh**: Ô tìm kiếm có gợi ý tự động giúp bạn nhảy nhanh đến bất kỳ ảnh nào trong tập dữ liệu.
-- **Xử lý Ảnh lỗi**: Tự động phát hiện và cảnh báo các ảnh bị hỏng (truncated) mà không làm gián đoạn luồng làm việc.
+![Gán nhãn và chỉnh sửa bounding box](assets/demo2.png)
 
-## 🛠 Cấu trúc dự án (Modular Design)
+## ✨ Tính năng
 
-Dự án được thiết kế theo module để dễ dàng bảo trì và mở rộng:
-- `core/`: Chứa logic xử lý dữ liệu và cấu hình hệ thống.
-- `ui/`: Các thành phần giao diện người dùng tách biệt.
-- `app.py`: Bộ điều phối (Controller) kết nối giao diện và logic.
-- `main.py`: Điểm bắt đầu của ứng dụng.
+| Tính năng | Mô tả |
+|---|---|
+| 🤖 **Auto-Annotation** | Trích xuất frame từ video và dùng model YOLO (`.pt`) để gán nhãn tự động |
+| 🔍 **Review & Edit** | Giao diện kéo-thả để vẽ, chỉnh sửa và xóa bounding box |
+| 📂 **Dual-Mode** | Hỗ trợ cả thư mục đơn lẫn cấu trúc YOLO chuẩn (`images/` + `labels/` với `train/val/test`) |
+| 🔎 **Tìm kiếm ảnh** | Ô tìm kiếm với gợi ý tự động (autocomplete) để nhảy nhanh đến ảnh bất kỳ |
+| ✏️ **Đổi tên đồng bộ** | Đổi tên ảnh → tệp nhãn `.txt` tự động đổi theo, giữ tính nhất quán dữ liệu |
+| 🛡️ **Xử lý ảnh lỗi** | Tự động phát hiện ảnh bị hỏng (truncated) mà không làm crash ứng dụng |
 
-## 🚀 Cài đặt & Sử dụng
+## 🗂️ Cấu trúc dự án
 
-### Yêu cầu hệ thống
+```
+DataLabelingTool/
+├── main.py                ← Điểm khởi chạy ứng dụng
+├── app.py                 ← Controller điều phối chính
+├── auto_annotator.py      ← Tự động gán nhãn từ video
+├── auto_rename.py         ← Script đổi tên ảnh (standalone)
+│
+├── core/                  ← Logic nghiệp vụ (không phụ thuộc giao diện)
+│   ├── config.py          ← Cấu hình: CLASSES, COLORS, hằng số
+│   └── data_manager.py    ← Quét thư mục, đọc/ghi/đổi tên nhãn
+│
+├── ui/                    ← Giao diện Tkinter
+│   ├── toolbar.py         ← Thanh công cụ: chế độ, tải, tìm kiếm, đổi tên
+│   ├── class_panel.py     ← Bảng chọn nhãn bên trái
+│   ├── canvas_panel.py    ← Vùng vẽ trung tâm + điều hướng ◀ ▶
+│   └── status_bar.py      ← Thanh trạng thái phía dưới
+│
+└── assets/                ← Ảnh demo và tài nguyên
+```
+
+## 🚀 Cài đặt
+
+### Yêu cầu
 - Python 3.8+
-- Các thư viện cần thiết: `Pillow`, `opencv-python`, `ultralytics`.
+
+### Cài đặt thư viện
 
 ```bash
-# Cài đặt thư viện
 pip install Pillow opencv-python ultralytics
 ```
 
-### Chạy ứng dụng
-1. **Để tự động gán nhãn từ video**:
-   Chạy `python auto_annotator.py`.
-2. **Để kiểm tra và chỉnh sửa nhãn thủ công**:
-   Chạy `python main.py`.
+## 📖 Hướng dẫn sử dụng
 
-## ⌨️ Phím tắt nhanh (Hotkeys)
+### Review & Chỉnh sửa nhãn
 
-Tối ưu hóa tốc độ gán nhãn với bộ phím tắt:
-- **`Enter`**: Chốt khung nhãn vừa vẽ (Draft).
-- **`Ctrl + Z`**: Hoàn tác (Undo) nhãn cuối cùng.
-- **`Ctrl + S`** hoặc phím **`S`**: Lưu nhãn hiện tại. (Thông báo sẽ hiện ở thanh trạng thái).
-- **`Mũi tên Trái (←)`**: Chuyển về ảnh trước.
-- **`Mũi tên Phải (→)`**: Chuyển sang ảnh sau.
+```bash
+python main.py
+```
+
+1. Chọn **Chế độ** phù hợp với cấu trúc thư mục của bạn.
+2. Nhấn **"Chọn thư mục Dataset"** để tải ảnh.
+3. Kéo chuột trên ảnh để vẽ bounding box → nhấn **Enter** để chốt.
+4. Nhấn **Ctrl+S** để lưu nhãn.
+
+### Tự động gán nhãn từ video
+
+```bash
+python auto_annotator.py
+```
+
+## ⌨️ Phím tắt
+
+| Phím | Chức năng |
+|---|---|
+| `Enter` | Chốt khung nhãn vừa vẽ |
+| `Ctrl + Z` | Hoàn tác nhãn cuối cùng |
+| `Ctrl + S` | Lưu nhãn |
+| `Ctrl + R` | Trỏ vào ô đổi tên ảnh |
+| `←` / `→` | Chuyển ảnh trước / sau |
 
 ---
-*Phát triển bởi chuyên gia Python GUI & Computer Vision.*
+
+*Vibecode by thainv299 😁*

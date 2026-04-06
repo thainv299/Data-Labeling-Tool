@@ -1,6 +1,4 @@
-# ============================================================
-# main.py — Điểm bắt đầu (Entry point) của ứng dụng
-# ============================================================
+
 import tkinter as tk
 from app import YoloReviewerApp
 

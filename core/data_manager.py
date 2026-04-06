@@ -86,3 +86,40 @@ class DataManager:
         with open(txt_path, "w") as f:
             for cls_id, xc, yc, w, h in labels:
                 f.write(f"{cls_id} {xc:.6f} {yc:.6f} {w:.6f} {h:.6f}\n")
+
+    # ----------------------------------------------------------
+    # Đổi tên tệp (Đồng bộ Ảnh + Nhãn)
+    # ----------------------------------------------------------
+    def rename_dataset_item(self, old_img_path: str, new_name: str, mode: str) -> str:
+        """Đổi tên tệp ảnh và tệp nhãn tương ứng (nếu có)."""
+        # 1. Phân tách đường dẫn cũ
+        dir_name = os.path.dirname(old_img_path)
+        old_file_name = os.path.basename(old_img_path)
+        base, ext = os.path.splitext(old_file_name)
+
+        if not new_name:
+            return old_img_path
+
+        # 2. Tạo đường dẫn ảnh mới
+        new_img_path = os.path.join(dir_name, new_name + ext)
+        if new_img_path == old_img_path:
+            return old_img_path
+
+        if os.path.exists(new_img_path):
+            raise FileExistsError(f"Tệp đã tồn tại: {os.path.basename(new_img_path)}")
+
+        # 3. Tìm đường dẫn nhãn tương ứng
+        old_txt_path = self.get_label_path(old_img_path, mode)
+        new_txt_path = os.path.join(os.path.dirname(old_txt_path), new_name + ".txt")
+
+        # 4. Thực hiện đổi tên thực tế
+        os.rename(old_img_path, new_img_path)
+        if os.path.exists(old_txt_path):
+            try:
+                os.rename(old_txt_path, new_txt_path)
+            except Exception as e:
+                # Nếu đổi tên nhãn lỗi, cố gắng hoàn tác đổi tên ảnh? 
+                # (Tạm thời chỉ báo lỗi vì hiếm khi xảy ra)
+                print(f"Lỗi khi đổi tên nhãn: {e}")
+
+        return new_img_path

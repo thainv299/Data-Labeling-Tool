@@ -8,13 +8,16 @@ from tkinter import ttk
 class Toolbar(tk.Frame):
     """Thanh công cụ trên cùng chứa chọn chế độ, bộ tải, tìm kiếm và nút lưu."""
 
-    def __init__(self, parent, mode_var: tk.StringVar, on_load_dataset=None, on_save_labels=None, on_search=None):
+    def __init__(self, parent, mode_var: tk.StringVar, rename_var: tk.StringVar = None, 
+                 on_load_dataset=None, on_save_labels=None, on_search=None, on_rename=None):
         super().__init__(parent, pady=5)
 
         self.mode_var = mode_var
+        self.rename_var = rename_var
         self._on_load_dataset = on_load_dataset
         self._on_save_labels = on_save_labels
         self._on_search = on_search
+        self._on_rename = on_rename
 
         self._build()
 
@@ -59,6 +62,23 @@ class Toolbar(tk.Frame):
             self.combo_search.bind("<<ComboboxSelected>>", self._on_search)
             # Cho phép nhấn Enter để tìm
             self.combo_search.bind("<Return>", self._on_search)
+
+        # --- Đổi tên (Rename) ---
+        rename_frame = tk.Frame(self)
+        rename_frame.pack(side=tk.LEFT, padx=10)
+
+        tk.Label(rename_frame, text="Đổi tên:", font=("Arial", 10)).pack(side=tk.LEFT)
+        self.entry_rename = tk.Entry(rename_frame, textvariable=self.rename_var, width=20)
+        self.entry_rename.pack(side=tk.LEFT, padx=2)
+        
+        # Thêm nút Đổi tên
+        tk.Button(
+            rename_frame, 
+            text="Ok", 
+            command=self._on_rename,
+            bg="#f39c12", fg="white",
+            font=("Arial", 9, "bold")
+        ).pack(side=tk.LEFT)
 
         # --- Thông tin ảnh hiện tại ---
         self.lbl_info = tk.Label(self, text="Chưa tải thư mục nào", font=("Arial", 10, "bold"), fg="#2980b9")

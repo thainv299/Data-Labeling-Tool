@@ -29,6 +29,7 @@ class YoloReviewerApp:
 
         # --- Biến chung Tk ---
         self.mode_var = tk.StringVar(value="same_folder")
+        self.rename_var = tk.StringVar()
         self.selected_class = tk.IntVar(value=0)
 
         # --- Lớp dữ liệu ---
@@ -46,9 +47,11 @@ class YoloReviewerApp:
         self.toolbar = Toolbar(
             self.root,
             mode_var=self.mode_var,
+            rename_var=self.rename_var,
             on_load_dataset=self.load_dataset,
             on_save_labels=self.save_labels,
             on_search=self.on_search_selected,
+            on_rename=self.rename_current_item,
         )
         self.toolbar.pack(side=tk.TOP, fill=tk.X)
 
@@ -79,6 +82,7 @@ class YoloReviewerApp:
         self.root.bind("<Return>", lambda e: self.canvas_panel.confirm_draft())
         self.root.bind("<Control-z>", lambda e: self.canvas_panel.undo_label())
         self.root.bind("<Control-s>", lambda e: self.save_labels())
+        self.root.bind("<Control-r>", lambda e: self.toolbar.entry_rename.focus_set())
 
     # ----------------------------------------------------------
     # Tải tập dữ liệu
@@ -123,6 +127,10 @@ class YoloReviewerApp:
         # Cập nhật thanh công cụ
         self.toolbar.set_info(f"Ảnh {self.current_idx + 1}/{len(self.image_paths)}: {file_name}")
         self.toolbar.set_search_value(file_name)
+        
+        # Cập nhật ô đổi tên (không lấy phần mở rộng)
+        base, _ = os.path.splitext(file_name)
+        self.rename_var.set(base)
 
         try:
             # Mở và hiển thị hình ảnh
@@ -158,6 +166,42 @@ class YoloReviewerApp:
         
         # Nếu không tìm thấy chính xác, báo lỗi nhẹ
         self.status_bar.set_text(f"Không tìm thấy ảnh: {target_name}")
+
+    # ----------------------------------------------------------
+    # Đổi tên ảnh hiện tại
+    # ----------------------------------------------------------
+    def rename_current_item(self):
+        """Thực hiện đổi tên ảnh và nhãn hiện tại."""
+        if not self.image_paths:
+            return
+
+        old_path = self.image_paths[self.current_idx]
+        new_name = self.rename_var.get().strip()
+        mode = self.mode_var.get()
+
+        if not new_name:
+            return
+
+        try:
+            new_path = self.data_manager.rename_dataset_item(old_path, new_name, mode)
+            if new_path == old_path:
+                return
+
+            # Cập nhật danh sách đường dẫn
+            self.image_paths[self.current_idx] = new_path
+            
+            # Cập nhật danh sách gợi ý tìm kiếm
+            basenames = [os.path.basename(p) for p in self.image_paths]
+            self.toolbar.update_search_list(basenames)
+            
+            # Tải lại thông tin view
+            self.load_image()
+            self.status_bar.set_text(f"Đã đổi tên thành: {os.path.basename(new_path)}")
+            
+        except FileExistsError as e:
+            messagebox.showwarning("Trùng tên", str(e))
+        except Exception as e:
+            messagebox.showerror("Lỗi đổi tên", str(e))
 
     # ----------------------------------------------------------
     # Lưu nhãn

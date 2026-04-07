@@ -6,12 +6,13 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 from PIL import Image
 
-from core.config import APP_TITLE, APP_GEOMETRY
+from core.config import APP_TITLE, APP_GEOMETRY, CLASSES as DEFAULT_CLASSES
 from core.data_manager import DataManager
 from ui.toolbar import Toolbar
 from ui.class_panel import ClassPanel
 from ui.canvas_panel import CanvasPanel
 from ui.status_bar import StatusBar
+from auto_annotator import AutoAnnotatorApp
 
 
 class YoloReviewerApp:
@@ -52,17 +53,24 @@ class YoloReviewerApp:
             on_save_labels=self.save_labels,
             on_search=self.on_search_selected,
             on_rename=self.rename_current_item,
+            on_delete=self.delete_current_item,
+            on_auto_annotate=self.launch_auto_annotator,
         )
         self.toolbar.pack(side=tk.TOP, fill=tk.X)
 
         # Bảng chọn nhãn bên trái
-        self.class_panel = ClassPanel(self.root, selected_class=self.selected_class)
+        self.class_panel = ClassPanel(
+            self.root, 
+            selected_class=self.selected_class,
+            on_visibility_change=self.on_visibility_change
+        )
         self.class_panel.pack(side=tk.LEFT, fill=tk.Y)
+        self.class_panel.update_classes(DEFAULT_CLASSES)
 
         # Thanh trạng thái dưới cùng
         self.status_bar = StatusBar(
             self.root,
-            text="Phím tắt: Enter (Chốt), Ctrl+Z (Hoàn tác), Left/Right (Chuyển ảnh), Ctrl+S (Lưu)",
+            text="Phím tắt: Enter (Chốt), Ctrl+Z (Hoàn tác), Left/Right (Chuyển ảnh), Ctrl+S (Lưu), Del (Xoá)",
         )
         self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
@@ -74,6 +82,7 @@ class YoloReviewerApp:
             on_next=self.next_image,
         )
         self.canvas_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.canvas_panel.set_class_panel(self.class_panel)
 
     def _bind_keys(self):
         # Gắn phím tắt hệ thống
@@ -83,6 +92,7 @@ class YoloReviewerApp:
         self.root.bind("<Control-z>", lambda e: self.canvas_panel.undo_label())
         self.root.bind("<Control-s>", lambda e: self.save_labels())
         self.root.bind("<Control-r>", lambda e: self.toolbar.entry_rename.focus_set())
+        self.root.bind("<Delete>", lambda e: self.delete_current_item())
 
     # ----------------------------------------------------------
     # Tải tập dữ liệu
@@ -91,6 +101,15 @@ class YoloReviewerApp:
         folder = filedialog.askdirectory()
         if not folder:
             return
+
+        # Tự động tìm file YAML
+        config = self.data_manager.load_dataset_config(folder)
+        if config:
+            self.mode_var.set("yolo_dataset")
+            self.class_panel.update_classes(config)
+            self.status_bar.set_text(f"Đã tải cấu hình từ file YAML. Chế độ: Review YOLO Dataset")
+        else:
+            self.class_panel.update_classes(DEFAULT_CLASSES)
 
         mode = self.mode_var.get()
 
@@ -145,7 +164,6 @@ class YoloReviewerApp:
             
         except OSError as e:
             messagebox.showerror("Lỗi ảnh", f"Không thể tải ảnh: {file_name}\nẢnh có thể bị hỏng (Truncated).\nError: {str(e)}")
-            # Nếu ảnh lỗi, tự động bỏ qua nếu người dùng nhấn OK hoặc xử lý tùy ý
             return
 
     # ----------------------------------------------------------
@@ -168,7 +186,7 @@ class YoloReviewerApp:
         self.status_bar.set_text(f"Không tìm thấy ảnh: {target_name}")
 
     # ----------------------------------------------------------
-    # Đổi tên ảnh hiện tại
+    # Đổi tên & Xoá
     # ----------------------------------------------------------
     def rename_current_item(self):
         """Thực hiện đổi tên ảnh và nhãn hiện tại."""
@@ -187,24 +205,47 @@ class YoloReviewerApp:
             if new_path == old_path:
                 return
 
-            # Cập nhật danh sách đường dẫn
             self.image_paths[self.current_idx] = new_path
-            
-            # Cập nhật danh sách gợi ý tìm kiếm
             basenames = [os.path.basename(p) for p in self.image_paths]
             self.toolbar.update_search_list(basenames)
-            
-            # Tải lại thông tin view
             self.load_image()
             self.status_bar.set_text(f"Đã đổi tên thành: {os.path.basename(new_path)}")
             
-        except FileExistsError as e:
-            messagebox.showwarning("Trùng tên", str(e))
         except Exception as e:
             messagebox.showerror("Lỗi đổi tên", str(e))
 
+    def delete_current_item(self):
+        """Xoá vĩnh viễn ảnh và nhãn hiện tại."""
+        if not self.image_paths:
+            return
+
+        img_path = self.image_paths[self.current_idx]
+        file_name = os.path.basename(img_path)
+
+        if not messagebox.askyesno("Xác nhận xoá", f"Bạn có chắc muốn xoá vĩnh viễn file:\n{file_name}?\n(Sẽ xoá cả file nhãn .txt tương ứng)"):
+            return
+
+        mode = self.mode_var.get()
+        if self.data_manager.delete_dataset_item(img_path, mode):
+            # Xoá khỏi danh sách bộ nhớ
+            self.image_paths.pop(self.current_idx)
+            
+            # Điều chỉnh index
+            if self.current_idx >= len(self.image_paths):
+                self.current_idx = max(0, len(self.image_paths) - 1)
+            
+            if self.image_paths:
+                self.load_image()
+            else:
+                self.toolbar.set_info("Dữ liệu trống")
+                self.canvas_panel.canvas.delete("all")
+            
+            self.status_bar.set_text(f"Đã xoá: {file_name}")
+        else:
+            messagebox.showerror("Lỗi", "Không thể xoá file. Vui lòng kiểm tra quyền truy cập.")
+
     # ----------------------------------------------------------
-    # Lưu nhãn
+    # Lưu nhãn & Đồng bộ hiển thị
     # ----------------------------------------------------------
     def save_labels(self):
         if not self.image_paths:
@@ -216,9 +257,19 @@ class YoloReviewerApp:
 
         labels = self.canvas_panel.get_labels()
         self.data_manager.save_labels(txt_path, labels)
-
         self.status_bar.set_text(f"Đã lưu nhãn: {os.path.basename(img_path)}")
-        # messagebox.showinfo("Đã lưu", f"Đã lưu nhãn cho ảnh: {os.path.basename(img_path)}") # Tắt bớt popup phiền phức
+
+    def on_visibility_change(self):
+        """Khi checkbox ẩn/hiện class thay đổi, vẽ lại canvas."""
+        self.canvas_panel.draw_all_labels()
+
+    # ----------------------------------------------------------
+    # Tích hợp Auto Annotator
+    # ----------------------------------------------------------
+    def launch_auto_annotator(self):
+        """Mở cửa sổ tự động gán nhãn."""
+        sub_root = tk.Toplevel(self.root)
+        AutoAnnotatorApp(sub_root)
 
     # ----------------------------------------------------------
     # Điều hướng

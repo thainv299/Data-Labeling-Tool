@@ -10,13 +10,15 @@ from core.config import CLASSES, COLORS
 class CanvasPanel(tk.Frame):
     """Bảng trung tâm chứa ◀ prev | Canvas | ▶ next và toàn bộ logic vẽ khung nhãn."""
 
-    def __init__(self, parent, selected_class: tk.IntVar, on_prev=None, on_next=None):
+    def __init__(self, parent, selected_class: tk.IntVar, on_prev=None, on_next=None, on_label_selected=None):
         super().__init__(parent, bg="#2c3e50")
 
         self.selected_class = selected_class
         self._on_prev = on_prev
         self._on_next = on_next
+        self._on_label_selected = on_label_selected
         self.class_panel = None # Sẽ được gán từ app.py
+        self.selected_label_idx = -1 # Lưu chỉ số nhãn đang chọn
 
         # Trạng thái vẽ (Draft)
         self.draft_rect = None
@@ -111,6 +113,7 @@ class CanvasPanel(tk.Frame):
         # Reset nháp vẽ
         self.draft_rect = None
         self.draft_coords = None
+        self.selected_label_idx = -1
 
     # ----------------------------------------------------------
     # Quản lý nhãn
@@ -118,6 +121,7 @@ class CanvasPanel(tk.Frame):
     def set_labels(self, labels: list[tuple]):
         """Gán danh sách nhãn hiện tại và vẽ lại."""
         self.current_labels = list(labels)
+        self.selected_label_idx = -1
         self.draw_all_labels()
 
     def get_labels(self) -> list[tuple]:
@@ -125,28 +129,25 @@ class CanvasPanel(tk.Frame):
         return list(self.current_labels)
 
     def draw_all_labels(self):
-        """Vẽ lại toàn bộ bounding box đã chốt lên canvas."""
+        """Vẽ lại toàn bộ bounding box lên canvas."""
         self.canvas.delete("label_box")
 
-        for cls_id, xc, yc, w, h in self.current_labels:
-            # Kiểm tra xem lớp này có đang được bật hiển thị không
+        for i, (cls_id, xc, yc, w, h) in enumerate(self.current_labels):
             if self.class_panel and not self.class_panel.is_visible(cls_id):
                 continue
 
-            # Chuyển đổi định dạng YOLO sang tọa độ pixel pixels
-            px = xc * self.img_w_disp
-            py = yc * self.img_h_disp
-            bw = w * self.img_w_disp
-            bh = h * self.img_h_disp
+            px, py = xc * self.img_w_disp, yc * self.img_h_disp
+            bw, bh = w * self.img_w_disp, h * self.img_h_disp
+            x1, y1, x2, y2 = px - bw/2, py - bh/2, px + bw/2, py + bh/2
 
-            x1, y1 = px - bw / 2, py - bh / 2
-            x2, y2 = px + bw / 2, py + bh / 2
-
+            is_selected = (i == self.selected_label_idx)
             color = self.class_panel.get_color(cls_id) if self.class_panel else "#FF0000"
             class_name = self.class_panel.classes.get(cls_id, "Unknown") if self.class_panel else f"ID: {cls_id}"
 
+            border_width = 4 if is_selected else 2
+            
             self.canvas.create_rectangle(
-                x1, y1, x2, y2, outline=color, width=2, tags="label_box",
+                x1, y1, x2, y2, outline=color, width=border_width, tags="label_box",
             )
             self.canvas.create_text(
                 x1, y1 - 5,
@@ -156,17 +157,67 @@ class CanvasPanel(tk.Frame):
                 tags="label_box",
             )
 
+    def delete_selected_label(self):
+        """Xoá nhãn đang được chọn."""
+        if 0 <= self.selected_label_idx < len(self.current_labels):
+            self.current_labels.pop(self.selected_label_idx)
+            self.selected_label_idx = -1
+            self.draw_all_labels()
+            return True
+        return False
+
+    def deselect_label(self):
+        """Bỏ chọn nhãn."""
+        self.selected_label_idx = -1
+        self.draw_all_labels()
+
+    def update_selected_label_class(self, new_cls_id):
+        """Cập nhật lớp cho nhãn đang chọn."""
+        if 0 <= self.selected_label_idx < len(self.current_labels):
+            cls_id, xc, yc, w, h = self.current_labels[self.selected_label_idx]
+            self.current_labels[self.selected_label_idx] = (new_cls_id, xc, yc, w, h)
+            self.draw_all_labels()
+
     # ----------------------------------------------------------
-    # Sự kiện chuột (Vẽ Box)
+    # Sự kiện chuột (Vẽ Box & Chọn Box)
     # ----------------------------------------------------------
     def _on_mouse_down(self, event):
-        # Bắt đầu kéo và lưu điểm tọa độ xuất phát
-        self.canvas.focus_set()  # Chiếm lại tiêu điểm để phím Enter hoạt động cho việc gán nhãn
+        self.canvas.focus_set()
+        
+        # Thử chọn nhãn hiện có
+        clicked_idx = -1
+        min_area = float('inf')
+        for i, (cls_id, xc, yc, w, h) in enumerate(self.current_labels):
+            if self.class_panel and not self.class_panel.is_visible(cls_id):
+                continue
+                
+            px, py = xc * self.img_w_disp, yc * self.img_h_disp
+            bw, bh = w * self.img_w_disp, h * self.img_h_disp
+            x1, y1, x2, y2 = px - bw/2, py - bh/2, px + bw/2, py + bh/2
+            
+            if x1 <= event.x <= x2 and y1 <= event.y <= y2:
+                area = w * h
+                if area < min_area:
+                    min_area = area
+                    clicked_idx = i
+        
+        if clicked_idx != -1:
+            self.selected_label_idx = clicked_idx
+            self.draw_all_labels()
+            if self._on_label_selected:
+                self._on_label_selected(self.current_labels[clicked_idx][0])
+            self.start_x = -1 # Tạm ngưng vẽ nhãn mới khi vừa chọn
+            return
+
+        # Nếu không chọn được nhãn nào -> Bỏ chọn và bắt đầu vẽ mới
+        self.selected_label_idx = -1
+        self.draw_all_labels()
         self.start_x = min(max(event.x, 0), self.img_w_disp)
         self.start_y = min(max(event.y, 0), self.img_h_disp)
 
     def _on_mouse_drag(self, event):
-        # Kéo và vẽ box tạm thời (nét đứt)
+        if self.start_x == -1: return
+
         cur_x = min(max(event.x, 0), self.img_w_disp)
         cur_y = min(max(event.y, 0), self.img_h_disp)
 
@@ -183,24 +234,17 @@ class CanvasPanel(tk.Frame):
         self.draft_coords = (self.start_x, self.start_y, cur_x, cur_y)
 
     def _on_mouse_up(self, event):
-        """Thả chuột — nhãn ở trạng thái chờ chốt (Draft)."""
         pass
 
-    # ----------------------------------------------------------
-    # Chốt nhãn & Hoàn tác
-    # ----------------------------------------------------------
     def confirm_draft(self):
-        """Chốt khung nhãn tạm thời (Khi nhấn Enter)."""
         if self.draft_coords:
             x1, y1, x2, y2 = self.draft_coords
-
-            # Tính toán sang tọa độ chuẩn YOLO (0.0 - 1.0)
             xc = ((x1 + x2) / 2) / self.img_w_disp
             yc = ((y1 + y2) / 2) / self.img_h_disp
             w = abs(x2 - x1) / self.img_w_disp
             h = abs(y2 - y1) / self.img_h_disp
 
-            if w > 0.01 and h > 0.01:
+            if w > 0.005 and h > 0.005:
                 self.current_labels.append((self.selected_class.get(), xc, yc, w, h))
 
             self.canvas.delete(self.draft_rect)
@@ -209,39 +253,7 @@ class CanvasPanel(tk.Frame):
             self.draw_all_labels()
 
     def undo_label(self):
-        """Xóa nhãn được thêm vào cuối cùng (Khi nhấn Ctrl+Z)."""
         if self.current_labels:
             self.current_labels.pop()
-            self.draw_all_labels()
-
-    def _on_mouse_up(self, event):
-        """Thả chuột — nhãn ở trạng thái chờ chốt (Draft)."""
-        pass
-
-    # ----------------------------------------------------------
-    # Chốt nhãn & Hoàn tác
-    # ----------------------------------------------------------
-    def confirm_draft(self):
-        """Chốt khung nhãn tạm thời (Khi nhấn Enter)."""
-        if self.draft_coords:
-            x1, y1, x2, y2 = self.draft_coords
-
-            # Tính toán sang tọa độ chuẩn YOLO (0.0 - 1.0)
-            xc = ((x1 + x2) / 2) / self.img_w_disp
-            yc = ((y1 + y2) / 2) / self.img_h_disp
-            w = abs(x2 - x1) / self.img_w_disp
-            h = abs(y2 - y1) / self.img_h_disp
-
-            if w > 0.01 and h > 0.01:
-                self.current_labels.append((self.selected_class.get(), xc, yc, w, h))
-
-            self.canvas.delete(self.draft_rect)
-            self.draft_rect = None
-            self.draft_coords = None
-            self.draw_all_labels()
-
-    def undo_label(self):
-        """Xóa nhãn được thêm vào cuối cùng (Khi nhấn Ctrl+Z)."""
-        if self.current_labels:
-            self.current_labels.pop()
+            self.selected_label_idx = -1
             self.draw_all_labels()

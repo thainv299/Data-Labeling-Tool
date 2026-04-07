@@ -80,9 +80,13 @@ class YoloReviewerApp:
             selected_class=self.selected_class,
             on_prev=self.prev_image,
             on_next=self.next_image,
+            on_label_selected=self.on_label_selected
         )
         self.canvas_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.canvas_panel.set_class_panel(self.class_panel)
+
+        # Lắng nghe thay đổi lớp để cập nhật nhãn đang chọn
+        self.selected_class.trace_add("write", self.on_class_radio_changed)
 
     def _bind_keys(self):
         # Gắn phím tắt hệ thống
@@ -92,7 +96,16 @@ class YoloReviewerApp:
         self.root.bind("<Control-z>", lambda e: self.canvas_panel.undo_label())
         self.root.bind("<Control-s>", lambda e: self.save_labels())
         self.root.bind("<Control-r>", lambda e: self.toolbar.entry_rename.focus_set())
-        self.root.bind("<Delete>", lambda e: self.delete_current_item())
+        self.root.bind("<Delete>", lambda e: self.delete_hotkey_handler())
+        self.root.bind("<Escape>", lambda e: self.canvas_panel.deselect_label())
+        self.root.bind("x", lambda e: self.canvas_panel.delete_selected_label())
+
+    def delete_hotkey_handler(self):
+        """Xử lý phím Delete: Ưu tiên xoá nhãn đang chọn, nếu không có thì xoá ảnh."""
+        if self.canvas_panel.selected_label_idx != -1:
+            self.canvas_panel.delete_selected_label()
+        else:
+            self.delete_current_item()
 
     # ----------------------------------------------------------
     # Tải tập dữ liệu
@@ -262,6 +275,16 @@ class YoloReviewerApp:
     def on_visibility_change(self):
         """Khi checkbox ẩn/hiện class thay đổi, vẽ lại canvas."""
         self.canvas_panel.draw_all_labels()
+
+    def on_label_selected(self, cls_id):
+        """Khi một nhãn được chọn trên Canvas, cập nhật radio button tương ứng."""
+        self.selected_class.set(cls_id)
+
+    def on_class_radio_changed(self, *args):
+        """Khi người dùng chọn một lớp mới ở bảng bên trái."""
+        new_cls_id = self.selected_class.get()
+        # Nếu đang có nhãn được chọn trên canvas, cập nhật nó sang lớp mới
+        self.canvas_panel.update_selected_label_class(new_cls_id)
 
     # ----------------------------------------------------------
     # Tích hợp Auto Annotator

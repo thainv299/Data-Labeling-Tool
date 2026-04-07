@@ -70,7 +70,8 @@ class YoloReviewerApp:
         # Thanh trạng thái dưới cùng
         self.status_bar = StatusBar(
             self.root,
-            text="Phím tắt: Enter (Chốt), Ctrl+Z (Hoàn tác), Left/Right (Chuyển ảnh), Ctrl+S (Lưu), Del (Xoá)",
+            text="Phím tắt: Enter (Chốt), Ctrl+Z (Hoàn tác), Left/Right (Chuyển ảnh), Ctrl+S (Lưu), Del (Xoá), Ctrl+Wheel (Zoom)",
+            on_reset_zoom=self.reset_zoom
         )
         self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
@@ -99,6 +100,24 @@ class YoloReviewerApp:
         self.root.bind("<Delete>", lambda e: self.delete_hotkey_handler())
         self.root.bind("<Escape>", lambda e: self.canvas_panel.deselect_label())
         self.root.bind("x", lambda e: self.canvas_panel.delete_selected_label())
+        
+        # Zoom binding
+        self.root.bind("<Control-MouseWheel>", self.on_zoom_event)
+
+    def on_zoom_event(self, event):
+        """Xử lý sự kiện Ctrl + Wheel."""
+        if event.delta > 0:
+            factor = 1.2
+        else:
+            factor = 0.8
+            
+        self.canvas_panel.change_zoom(factor, event.x, event.y)
+        self.status_bar.set_zoom(self.canvas_panel.zoom_level)
+
+    def reset_zoom(self):
+        """Đặt lại zoom về 100%."""
+        self.canvas_panel.reset_zoom()
+        self.status_bar.set_zoom(1.0)
 
     def delete_hotkey_handler(self):
         """Xử lý phím Delete: Ưu tiên xoá nhãn đang chọn, nếu không có thì xoá ảnh."""

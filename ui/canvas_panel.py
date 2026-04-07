@@ -18,18 +18,20 @@ class CanvasPanel(tk.Frame):
         self._on_next = on_next
         self._on_label_selected = on_label_selected
         self.class_panel = None # Sẽ được gán từ app.py
-        self.selected_label_idx = -1 # Lưu chỉ số nhãn đang chọn
+        
+        # Trạng thái hiển thị & Zoom
+        self.zoom_level = 1.0 # 1.0 = 100% (Fit)
+        self.base_w = 1
+        self.base_h = 1
+        self.original_image = None # PIL Image gốc để resize chất lượng cao
+        self.photo = None
 
         # Trạng thái vẽ (Draft)
+        self.selected_label_idx = -1
         self.draft_rect = None
         self.draft_coords = None  # (x1, y1, x2, y2)
         self.start_x = 0
         self.start_y = 0
-
-        # Thuộc tính hiển thị ảnh
-        self.img_w_disp = 1
-        self.img_h_disp = 1
-        self.photo = None
 
         # Danh sách nhãn hiện tại: (cls_id, xc, yc, w, h)
         self.current_labels: list[tuple] = []
@@ -38,7 +40,6 @@ class CanvasPanel(tk.Frame):
         self._bind_mouse()
 
     def set_class_panel(self, class_panel):
-        """Kết nối với ClassPanel để lấy thông tin màu và ẩn hiện."""
         self.class_panel = class_panel
 
     # ----------------------------------------------------------
@@ -55,15 +56,26 @@ class CanvasPanel(tk.Frame):
         )
         self.btn_prev.pack(side=tk.LEFT, fill=tk.Y)
 
-        # Container chứa Canvas (expand=True để căn giữa)
+        # Container chứa Canvas và Scrollbars
         canvas_container = tk.Frame(self, bg="#2c3e50")
-        canvas_container.pack(side=tk.LEFT, expand=True)
+        canvas_container.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self.v_scroll = tk.Scrollbar(canvas_container, orient="vertical")
+        self.v_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self.h_scroll = tk.Scrollbar(canvas_container, orient="horizontal")
+        self.h_scroll.pack(side=tk.BOTTOM, fill=tk.X)
 
         self.canvas = tk.Canvas(
             canvas_container, bg="black", cursor="cross", highlightthickness=0,
-            takefocus=1  # Cho phép Canvas nhận tiêu điểm từ bàn phím
+            xscrollcommand=self.h_scroll.set,
+            yscrollcommand=self.v_scroll.set,
+            takefocus=1
         )
-        self.canvas.pack()
+        self.canvas.pack(fill=tk.BOTH, expand=True)
+
+        self.v_scroll.config(command=self.canvas.yview)
+        self.h_scroll.config(command=self.canvas.xview)
 
         # Nút Ảnh Sau
         self.btn_next = tk.Button(
@@ -76,60 +88,115 @@ class CanvasPanel(tk.Frame):
         self.btn_next.pack(side=tk.RIGHT, fill=tk.Y)
 
     def _bind_mouse(self):
-        # Gắn sự kiện chuột trên Canvas
         self.canvas.bind("<ButtonPress-1>", self._on_mouse_down)
         self.canvas.bind("<B1-Motion>", self._on_mouse_drag)
         self.canvas.bind("<ButtonRelease-1>", self._on_mouse_up)
+        
+        # Panning (Chuột giữa)
+        self.canvas.bind("<ButtonPress-2>", self._on_pan_start)
+        self.canvas.bind("<B2-Motion>", self._on_pan_drag)
+        
+        # Zoom (Ctrl + Wheel) - Gắn ở App.py thực chất tốt hơn để bắt toàn cục,
+        # nhưng bind ở canvas cũng được nếu nó có focus.
 
     # ----------------------------------------------------------
-    # Hiển thị hình ảnh
+    # Hiển thị hình ảnh & Zoom
     # ----------------------------------------------------------
-    def display_image(self, pil_image: Image.Image):
-        """Tỷ lệ và hiển thị ảnh PIL lên canvas. Trả về kích thước thực hiển thị."""
-        real_w, real_h = pil_image.size
+    def display_image(self, pil_image: Image.Image, reset_zoom=True):
+        """Hiển thị ảnh và tính toán tỷ lệ Fit ban đầu."""
+        if pil_image:
+            self.original_image = pil_image
+            
+        if not self.original_image:
+            return
 
-        # Tính toán không gian trống có sẵn
-        self.update_idletasks()
-        frame_w = self.winfo_width() - 100
-        frame_h = self.winfo_height()
-        if frame_w < 100:
-            frame_w, frame_h = 800, 600
+        real_w, real_h = self.original_image.size
 
-        scale = min(frame_w / real_w, frame_h / real_h)
-        self.img_w_disp = int(real_w * scale)
-        self.img_h_disp = int(real_h * scale)
+        if reset_zoom:
+            self.zoom_level = 1.0
+            self.update_idletasks()
+            frame_w = self.canvas.winfo_width()
+            frame_h = self.canvas.winfo_height()
+            if frame_w < 100: frame_w, frame_h = 800, 600
 
-        # Cập nhật Canvas khớp với kích thước ảnh hiển thị
-        self.canvas.config(width=self.img_w_disp, height=self.img_h_disp)
+            scale = min(frame_w / real_w, frame_h / real_h)
+            self.base_w = int(real_w * scale)
+            self.base_h = int(real_h * scale)
 
-        img_resized = pil_image.resize(
+        # Tính toán kích thước hiển thị hiện tại
+        self.img_w_disp = int(self.base_w * self.zoom_level)
+        self.img_h_disp = int(self.base_h * self.zoom_level)
+
+        # Resize ảnh
+        img_resized = self.original_image.resize(
             (self.img_w_disp, self.img_h_disp), Image.Resampling.LANCZOS,
         )
         self.photo = ImageTk.PhotoImage(img_resized)
 
         self.canvas.delete("all")
-        self.canvas.create_image(0, 0, anchor=tk.NW, image=self.photo)
+        self.canvas.create_image(0, 0, anchor=tk.NW, image=self.photo, tags="image")
+        self.canvas.config(scrollregion=(0, 0, self.img_w_disp, self.img_h_disp))
 
-        # Reset nháp vẽ
+        # Vẽ lại nhãn
+        self.draw_all_labels()
+        
+        # Reset draft
         self.draft_rect = None
         self.draft_coords = None
-        self.selected_label_idx = -1
+
+    def change_zoom(self, delta_factor, center_x=None, center_y=None):
+        """Thay đổi mức phóng to."""
+        old_zoom = self.zoom_level
+        self.zoom_level *= delta_factor
+        
+        # Giới hạn zoom 10% - 1000%
+        self.zoom_level = min(max(self.zoom_level, 0.1), 10.0)
+        
+        if self.zoom_level == old_zoom:
+            return
+
+        # Lưu lại toạ độ trung tâm (canvas coordinates) để giữ vị trí nhìn
+        if center_x is None:
+            center_x = self.canvas.winfo_width() / 2
+        if center_y is None:
+            center_y = self.canvas.winfo_height() / 2
+            
+        canvas_x = self.canvas.canvasx(center_x)
+        canvas_y = self.canvas.canvasy(center_y)
+
+        self.display_image(None, reset_zoom=False)
+        
+        # Điều chỉnh view của canvas để tập trung vào điểm cũ
+        new_canvas_x = canvas_x * (self.zoom_level / old_zoom)
+        new_canvas_y = canvas_y * (self.zoom_level / old_zoom)
+        
+        self.canvas.xview_moveto((new_canvas_x - center_x) / self.img_w_disp)
+        self.canvas.yview_moveto((new_canvas_y - center_y) / self.img_h_disp)
+
+    def reset_zoom(self):
+        self.display_image(None, reset_zoom=True)
+
+    # ----------------------------------------------------------
+    # Panning (Kéo ảnh)
+    # ----------------------------------------------------------
+    def _on_pan_start(self, event):
+        self.canvas.scan_mark(event.x, event.y)
+
+    def _on_pan_drag(self, event):
+        self.canvas.scan_dragto(event.x, event.y, gain=1)
 
     # ----------------------------------------------------------
     # Quản lý nhãn
     # ----------------------------------------------------------
     def set_labels(self, labels: list[tuple]):
-        """Gán danh sách nhãn hiện tại và vẽ lại."""
         self.current_labels = list(labels)
         self.selected_label_idx = -1
         self.draw_all_labels()
 
     def get_labels(self) -> list[tuple]:
-        """Trả về danh sách các nhãn đang hiển thị."""
         return list(self.current_labels)
 
     def draw_all_labels(self):
-        """Vẽ lại toàn bộ bounding box lên canvas."""
         self.canvas.delete("label_box")
 
         for i, (cls_id, xc, yc, w, h) in enumerate(self.current_labels):
@@ -158,7 +225,6 @@ class CanvasPanel(tk.Frame):
             )
 
     def delete_selected_label(self):
-        """Xoá nhãn đang được chọn."""
         if 0 <= self.selected_label_idx < len(self.current_labels):
             self.current_labels.pop(self.selected_label_idx)
             self.selected_label_idx = -1
@@ -167,22 +233,24 @@ class CanvasPanel(tk.Frame):
         return False
 
     def deselect_label(self):
-        """Bỏ chọn nhãn."""
         self.selected_label_idx = -1
         self.draw_all_labels()
 
     def update_selected_label_class(self, new_cls_id):
-        """Cập nhật lớp cho nhãn đang chọn."""
         if 0 <= self.selected_label_idx < len(self.current_labels):
             cls_id, xc, yc, w, h = self.current_labels[self.selected_label_idx]
             self.current_labels[self.selected_label_idx] = (new_cls_id, xc, yc, w, h)
             self.draw_all_labels()
 
     # ----------------------------------------------------------
-    # Sự kiện chuột (Vẽ Box & Chọn Box)
+    # Sự kiện chuột
     # ----------------------------------------------------------
     def _on_mouse_down(self, event):
         self.canvas.focus_set()
+        
+        # Toạ độ thực tế trên Canvas (đã tính scroll)
+        cx = self.canvas.canvasx(event.x)
+        cy = self.canvas.canvasy(event.y)
         
         # Thử chọn nhãn hiện có
         clicked_idx = -1
@@ -195,7 +263,7 @@ class CanvasPanel(tk.Frame):
             bw, bh = w * self.img_w_disp, h * self.img_h_disp
             x1, y1, x2, y2 = px - bw/2, py - bh/2, px + bw/2, py + bh/2
             
-            if x1 <= event.x <= x2 and y1 <= event.y <= y2:
+            if x1 <= cx <= x2 and y1 <= cy <= y2:
                 area = w * h
                 if area < min_area:
                     min_area = area
@@ -206,20 +274,21 @@ class CanvasPanel(tk.Frame):
             self.draw_all_labels()
             if self._on_label_selected:
                 self._on_label_selected(self.current_labels[clicked_idx][0])
-            self.start_x = -1 # Tạm ngưng vẽ nhãn mới khi vừa chọn
+            self.start_x = -1
             return
 
-        # Nếu không chọn được nhãn nào -> Bỏ chọn và bắt đầu vẽ mới
         self.selected_label_idx = -1
         self.draw_all_labels()
-        self.start_x = min(max(event.x, 0), self.img_w_disp)
-        self.start_y = min(max(event.y, 0), self.img_h_disp)
+        self.start_x = min(max(cx, 0), self.img_w_disp)
+        self.start_y = min(max(cy, 0), self.img_h_disp)
 
     def _on_mouse_drag(self, event):
         if self.start_x == -1: return
 
-        cur_x = min(max(event.x, 0), self.img_w_disp)
-        cur_y = min(max(event.y, 0), self.img_h_disp)
+        cx = self.canvas.canvasx(event.x)
+        cy = self.canvas.canvasy(event.y)
+        cur_x = min(max(cx, 0), self.img_w_disp)
+        cur_y = min(max(cy, 0), self.img_h_disp)
 
         if self.draft_rect:
             self.canvas.delete(self.draft_rect)

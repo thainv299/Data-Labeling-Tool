@@ -4,6 +4,7 @@
 import os
 import glob
 import pathlib
+import yaml
 
 
 class DataManager:
@@ -122,4 +123,49 @@ class DataManager:
                 # (Tạm thời chỉ báo lỗi vì hiếm khi xảy ra)
                 print(f"Lỗi khi đổi tên nhãn: {e}")
 
-        return new_img_path
+    def delete_dataset_item(self, img_path: str, mode: str) -> bool:
+        """Xoá vĩnh viễn tệp ảnh và tệp nhãn tương ứng."""
+        try:
+            txt_path = self.get_label_path(img_path, mode)
+            if os.path.exists(img_path):
+                os.remove(img_path)
+            if os.path.exists(txt_path):
+                os.remove(txt_path)
+            return True
+        except Exception as e:
+            print(f"Lỗi khi xoá tệp: {e}")
+            return False
+
+    # ----------------------------------------------------------
+    # Tải cấu hình YAML (data.yaml)
+    # ----------------------------------------------------------
+    @staticmethod
+    def load_dataset_config(folder: str) -> dict:
+        """Tìm và tải file data.yaml hoặc *.yaml trong thư mục để lấy danh sách class."""
+        yaml_files = glob.glob(os.path.join(folder, "*.yaml"))
+        if not yaml_files:
+            # Thử tìm trong thư mục cha nếu folder là 'images'
+            parent = os.path.dirname(folder)
+            yaml_files = glob.glob(os.path.join(parent, "*.yaml"))
+
+        if yaml_files:
+            try:
+                # Ưu tiên data.yaml
+                target_yaml = yaml_files[0]
+                for yf in yaml_files:
+                    if "data.yaml" in os.path.basename(yf).lower():
+                        target_yaml = yf
+                        break
+                
+                with open(target_yaml, 'r', encoding='utf-8') as f:
+                    data = yaml.safe_load(f)
+                    if data and 'names' in data:
+                        names = data['names']
+                        if isinstance(names, list):
+                            return {i: name for i, name in enumerate(names)}
+                        elif isinstance(names, dict):
+                            return {int(k): v for k, v in names.items()}
+            except Exception as e:
+                print(f"Lỗi khi đọc file YAML: {e}")
+        
+        return None

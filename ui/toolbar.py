@@ -9,7 +9,8 @@ class Toolbar(tk.Frame):
     """Thanh công cụ trên cùng chứa chọn chế độ, bộ tải, tìm kiếm và nút lưu."""
 
     def __init__(self, parent, mode_var: tk.StringVar, rename_var: tk.StringVar = None, 
-                 on_load_dataset=None, on_save_labels=None, on_search=None, on_rename=None):
+                 on_load_dataset=None, on_save_labels=None, on_search=None, on_rename=None,
+                 on_delete=None, on_auto_annotate=None):
         super().__init__(parent, pady=5)
 
         self.mode_var = mode_var
@@ -18,6 +19,8 @@ class Toolbar(tk.Frame):
         self._on_save_labels = on_save_labels
         self._on_search = on_search
         self._on_rename = on_rename
+        self._on_delete = on_delete
+        self._on_auto_annotate = on_auto_annotate
 
         self._build()
 
@@ -50,6 +53,15 @@ class Toolbar(tk.Frame):
             command=self._on_load_dataset,
         ).pack(side=tk.LEFT, padx=10)
 
+        # --- Nút Auto Annotate ---
+        tk.Button(
+            self,
+            text="AI Auto-Annotate ✨",
+            font=("Arial", 10, "bold"),
+            bg="#8e44ad", fg="white",
+            command=self._on_auto_annotate,
+        ).pack(side=tk.LEFT, padx=5)
+
         # --- Tìm kiếm ảnh ---
         search_frame = tk.Frame(self)
         search_frame.pack(side=tk.LEFT, padx=10)
@@ -71,7 +83,7 @@ class Toolbar(tk.Frame):
         self.entry_rename = tk.Entry(rename_frame, textvariable=self.rename_var, width=20)
         self.entry_rename.pack(side=tk.LEFT, padx=2)
         
-        # Thêm nút Đổi tên
+        # Nút Đổi tên
         tk.Button(
             rename_frame, 
             text="Ok", 
@@ -79,6 +91,15 @@ class Toolbar(tk.Frame):
             bg="#f39c12", fg="white",
             font=("Arial", 9, "bold")
         ).pack(side=tk.LEFT)
+
+        # --- Nút Xoá ---
+        tk.Button(
+            self,
+            text="XOÁ (Del)",
+            font=("Arial", 10, "bold"),
+            bg="#e74c3c", fg="white",
+            command=self._on_delete,
+        ).pack(side=tk.LEFT, padx=10)
 
         # --- Thông tin ảnh hiện tại ---
         self.lbl_info = tk.Label(self, text="Chưa tải thư mục nào", font=("Arial", 10, "bold"), fg="#2980b9")

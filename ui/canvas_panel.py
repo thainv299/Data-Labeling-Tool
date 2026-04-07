@@ -16,6 +16,7 @@ class CanvasPanel(tk.Frame):
         self.selected_class = selected_class
         self._on_prev = on_prev
         self._on_next = on_next
+        self.class_panel = None # Sẽ được gán từ app.py
 
         # Trạng thái vẽ (Draft)
         self.draft_rect = None
@@ -33,6 +34,10 @@ class CanvasPanel(tk.Frame):
 
         self._build()
         self._bind_mouse()
+
+    def set_class_panel(self, class_panel):
+        """Kết nối với ClassPanel để lấy thông tin màu và ẩn hiện."""
+        self.class_panel = class_panel
 
     # ----------------------------------------------------------
     # Khởi tạo giao diện
@@ -124,6 +129,10 @@ class CanvasPanel(tk.Frame):
         self.canvas.delete("label_box")
 
         for cls_id, xc, yc, w, h in self.current_labels:
+            # Kiểm tra xem lớp này có đang được bật hiển thị không
+            if self.class_panel and not self.class_panel.is_visible(cls_id):
+                continue
+
             # Chuyển đổi định dạng YOLO sang tọa độ pixel pixels
             px = xc * self.img_w_disp
             py = yc * self.img_h_disp
@@ -133,13 +142,15 @@ class CanvasPanel(tk.Frame):
             x1, y1 = px - bw / 2, py - bh / 2
             x2, y2 = px + bw / 2, py + bh / 2
 
-            color = COLORS[cls_id % len(COLORS)]
+            color = self.class_panel.get_color(cls_id) if self.class_panel else "#FF0000"
+            class_name = self.class_panel.classes.get(cls_id, "Unknown") if self.class_panel else f"ID: {cls_id}"
+
             self.canvas.create_rectangle(
                 x1, y1, x2, y2, outline=color, width=2, tags="label_box",
             )
             self.canvas.create_text(
                 x1, y1 - 5,
-                text=CLASSES.get(cls_id, "Unknown"),
+                text=class_name,
                 fill=color, anchor=tk.SW,
                 font=("Arial", 10, "bold"),
                 tags="label_box",
@@ -162,12 +173,46 @@ class CanvasPanel(tk.Frame):
         if self.draft_rect:
             self.canvas.delete(self.draft_rect)
 
-        color = COLORS[self.selected_class.get() % len(COLORS)]
+        cls_id = self.selected_class.get()
+        color = self.class_panel.get_color(cls_id) if self.class_panel else "#FF0000"
+        
         self.draft_rect = self.canvas.create_rectangle(
             self.start_x, self.start_y, cur_x, cur_y,
             outline=color, width=2, dash=(4, 4),
         )
         self.draft_coords = (self.start_x, self.start_y, cur_x, cur_y)
+
+    def _on_mouse_up(self, event):
+        """Thả chuột — nhãn ở trạng thái chờ chốt (Draft)."""
+        pass
+
+    # ----------------------------------------------------------
+    # Chốt nhãn & Hoàn tác
+    # ----------------------------------------------------------
+    def confirm_draft(self):
+        """Chốt khung nhãn tạm thời (Khi nhấn Enter)."""
+        if self.draft_coords:
+            x1, y1, x2, y2 = self.draft_coords
+
+            # Tính toán sang tọa độ chuẩn YOLO (0.0 - 1.0)
+            xc = ((x1 + x2) / 2) / self.img_w_disp
+            yc = ((y1 + y2) / 2) / self.img_h_disp
+            w = abs(x2 - x1) / self.img_w_disp
+            h = abs(y2 - y1) / self.img_h_disp
+
+            if w > 0.01 and h > 0.01:
+                self.current_labels.append((self.selected_class.get(), xc, yc, w, h))
+
+            self.canvas.delete(self.draft_rect)
+            self.draft_rect = None
+            self.draft_coords = None
+            self.draw_all_labels()
+
+    def undo_label(self):
+        """Xóa nhãn được thêm vào cuối cùng (Khi nhấn Ctrl+Z)."""
+        if self.current_labels:
+            self.current_labels.pop()
+            self.draw_all_labels()
 
     def _on_mouse_up(self, event):
         """Thả chuột — nhãn ở trạng thái chờ chốt (Draft)."""

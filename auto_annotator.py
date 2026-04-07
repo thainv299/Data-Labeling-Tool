@@ -69,7 +69,7 @@ class AutoAnnotatorApp:
             
             output_base = self.output_dir.get()
             images_dir = os.path.join(output_base, "images")
-            labels_dir = os.path.join(output_base, "train")
+            labels_dir = os.path.join(output_base, "labels")
             os.makedirs(images_dir, exist_ok=True)
             os.makedirs(labels_dir, exist_ok=True)
             

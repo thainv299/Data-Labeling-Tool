@@ -9,7 +9,7 @@ class AutoAnnotatorApp:
     def __init__(self, root):
         self.root = root
         self.root.title("YOLO Auto-Annotation Tool")
-        self.root.geometry("550x350")
+        self.root.geometry("600x400")
         
         self.video_paths = []
         self.video_display = tk.StringVar(value="Chưa chọn video")
@@ -35,10 +35,17 @@ class AutoAnnotatorApp:
         tk.Button(frame_output, text="Browse", command=self.browse_output).pack(side="left")
 
         self.btn_start = tk.Button(self.root, text="BẮT ĐẦU GÁN NHÃN", font=("Arial", 12, "bold"), bg="#4CAF50", fg="white", command=self.start_processing)
-        self.btn_start.pack(pady=15)
+        self.btn_start.pack(pady=5)
         
+        self.resize_var = tk.BooleanVar(value=True)
+        tk.Checkbutton(
+            self.root, 
+            text="Tương thích 640px: Tự động resize ảnh để tiết kiệm ổ cứng (Không lệch box)", 
+            variable=self.resize_var, fg="#c0392b", font=("Arial", 9, "bold")
+        ).pack(pady=2)
+
         self.lbl_status = tk.Label(self.root, text="Sẵn sàng...", fg="blue")
-        self.lbl_status.pack()
+        self.lbl_status.pack(pady=5)
 
     def browse_model(self):
         path = filedialog.askopenfilename(filetypes=[("YOLO Model", "*.pt *.engine")])
@@ -107,7 +114,17 @@ class AutoAnnotatorApp:
                             img_path = os.path.join(images_dir, f"{base_filename}.jpg")
                             txt_path = os.path.join(labels_dir, f"{base_filename}.txt")
 
-                            cv2.imwrite(img_path, frame)
+                            if self.resize_var.get():
+                                h, w = frame.shape[:2]
+                                if max(w, h) > 640:
+                                    scale = 640.0 / float(max(w, h))
+                                    new_w, new_h = int(w * scale), int(h * scale)
+                                    frame_to_save = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
+                                else:
+                                    frame_to_save = frame
+                                cv2.imwrite(img_path, frame_to_save)
+                            else:
+                                cv2.imwrite(img_path, frame)
 
                             with open(txt_path, 'w') as f:
                                 for box in results[0].boxes:

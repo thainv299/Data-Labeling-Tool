@@ -63,7 +63,8 @@ class YoloReviewerApp:
         self.class_panel = ClassPanel(
             self.root, 
             selected_class=self.selected_class,
-            on_visibility_change=self.on_visibility_change
+            on_visibility_change=self.on_visibility_change,
+            on_select_all_class=self.on_select_all_class
         )
         self.class_panel.pack(side=tk.LEFT, fill=tk.Y)
         self.class_panel.update_classes(DEFAULT_CLASSES)
@@ -122,7 +123,7 @@ class YoloReviewerApp:
 
     def delete_hotkey_handler(self):
         """Xử lý phím Delete: Ưu tiên xoá nhãn đang chọn, nếu không có thì xoá ảnh."""
-        if self.canvas_panel.selected_label_idx != -1:
+        if self.canvas_panel.selected_label_indices:
             self.canvas_panel.delete_selected_label()
         else:
             self.delete_current_item()
@@ -299,6 +300,11 @@ class YoloReviewerApp:
     def on_visibility_change(self):
         """Khi checkbox ẩn/hiện class thay đổi, vẽ lại canvas."""
         self.canvas_panel.draw_all_labels()
+
+    def on_select_all_class(self, cls_id):
+        """Khi click nút [Chọn tất cả] trên Class panel."""
+        self.selected_class.set(cls_id)
+        self.canvas_panel.select_all_by_class(cls_id)
 
     def on_label_selected(self, cls_id):
         """Khi một nhãn được chọn trên Canvas, cập nhật radio button tương ứng."""

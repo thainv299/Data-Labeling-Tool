@@ -27,7 +27,7 @@ class CanvasPanel(tk.Frame):
         self.photo = None
 
         # Trạng thái vẽ (Draft)
-        self.selected_label_idx = -1
+        self.selected_label_indices = set()
         self.draft_rect = None
         self.draft_coords = None  # (x1, y1, x2, y2)
         self.start_x = 0
@@ -190,7 +190,7 @@ class CanvasPanel(tk.Frame):
     # ----------------------------------------------------------
     def set_labels(self, labels: list[tuple]):
         self.current_labels = list(labels)
-        self.selected_label_idx = -1
+        self.selected_label_indices.clear()
         self.draw_all_labels()
 
     def get_labels(self) -> list[tuple]:
@@ -207,7 +207,7 @@ class CanvasPanel(tk.Frame):
             bw, bh = w * self.img_w_disp, h * self.img_h_disp
             x1, y1, x2, y2 = px - bw/2, py - bh/2, px + bw/2, py + bh/2
 
-            is_selected = (i == self.selected_label_idx)
+            is_selected = (i in self.selected_label_indices)
             color = self.class_panel.get_color(cls_id) if self.class_panel else "#FF0000"
             class_name = self.class_panel.classes.get(cls_id, "Unknown") if self.class_panel else f"ID: {cls_id}"
 
@@ -225,22 +225,30 @@ class CanvasPanel(tk.Frame):
             )
 
     def delete_selected_label(self):
-        if 0 <= self.selected_label_idx < len(self.current_labels):
-            self.current_labels.pop(self.selected_label_idx)
-            self.selected_label_idx = -1
+        if self.selected_label_indices:
+            # Xoá ngược danh sách để index không bị sai lệch
+            for idx in sorted(self.selected_label_indices, reverse=True):
+                self.current_labels.pop(idx)
+            self.selected_label_indices.clear()
             self.draw_all_labels()
             return True
         return False
 
     def deselect_label(self):
-        self.selected_label_idx = -1
+        self.selected_label_indices.clear()
         self.draw_all_labels()
 
     def update_selected_label_class(self, new_cls_id):
-        if 0 <= self.selected_label_idx < len(self.current_labels):
-            cls_id, xc, yc, w, h = self.current_labels[self.selected_label_idx]
-            self.current_labels[self.selected_label_idx] = (new_cls_id, xc, yc, w, h)
+        if self.selected_label_indices:
+            for idx in self.selected_label_indices:
+                cls_id, xc, yc, w, h = self.current_labels[idx]
+                self.current_labels[idx] = (new_cls_id, xc, yc, w, h)
             self.draw_all_labels()
+
+    def select_all_by_class(self, cls_id):
+        """Chọn tất cả nhãn thuộc về 1 class_id cụ thể."""
+        self.selected_label_indices = {i for i, label in enumerate(self.current_labels) if label[0] == cls_id}
+        self.draw_all_labels()
 
     # ----------------------------------------------------------
     # Sự kiện chuột
@@ -270,14 +278,14 @@ class CanvasPanel(tk.Frame):
                     clicked_idx = i
         
         if clicked_idx != -1:
-            self.selected_label_idx = clicked_idx
+            self.selected_label_indices = {clicked_idx}
             self.draw_all_labels()
             if self._on_label_selected:
                 self._on_label_selected(self.current_labels[clicked_idx][0])
             self.start_x = -1
             return
 
-        self.selected_label_idx = -1
+        self.selected_label_indices.clear()
         self.draw_all_labels()
         self.start_x = min(max(cx, 0), self.img_w_disp)
         self.start_y = min(max(cy, 0), self.img_h_disp)
@@ -324,5 +332,5 @@ class CanvasPanel(tk.Frame):
     def undo_label(self):
         if self.current_labels:
             self.current_labels.pop()
-            self.selected_label_idx = -1
+            self.selected_label_indices.clear()
             self.draw_all_labels()

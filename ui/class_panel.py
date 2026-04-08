@@ -4,12 +4,13 @@ import random
 class ClassPanel(tk.Frame):
     """Bảng chọn nhãn YOLO với khả năng lọc hiển thị và màu ngẫu nhiên."""
 
-    def __init__(self, parent, selected_class: tk.IntVar, on_visibility_change=None):
+    def __init__(self, parent, selected_class: tk.IntVar, on_visibility_change=None, on_select_all_class=None):
         super().__init__(parent, width=200, padx=5, pady=5)
         self.pack_propagate(False) # Giữ kích thước cố định
 
         self.selected_class = selected_class
         self.on_visibility_change = on_visibility_change
+        self.on_select_all_class = on_select_all_class
         
         self.classes = {}
         self.colors = {}
@@ -89,7 +90,18 @@ class ClassPanel(tk.Frame):
             )
             rb.pack(side=tk.LEFT, padx=2)
 
+            # Nút chọn tất cả
+            btn_select_all = tk.Button(
+                row, text="[Chọn tất cả]", font=("Arial", 8),
+                command=lambda c=cls_id: self._on_select_all_class(c)
+            )
+            btn_select_all.pack(side=tk.RIGHT, padx=2)
+
         self.all_visible_var.set(True)
+
+    def _on_select_all_class(self, cls_id):
+        if self.on_select_all_class:
+            self.on_select_all_class(cls_id)
 
     def _toggle_all(self):
         state = self.all_visible_var.get()

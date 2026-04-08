@@ -100,21 +100,23 @@ class AutoAnnotatorApp:
                         frame_resized = cv2.resize(frame, (input_size, input_size))
                         results = model(frame_resized, verbose=False)
 
-                        # Đặt tên file có tiền tố video_name
-                        base_filename = f"{video_name}_frame_{frame_count:06d}"
-                        img_path = os.path.join(images_dir, f"{base_filename}.jpg")
-                        txt_path = os.path.join(labels_dir, f"{base_filename}.txt")
+                        # Chỉ lưu nếu có phát hiện đối tượng
+                        if len(results[0].boxes) > 0:
+                            # Đặt tên file có tiền tố video_name
+                            base_filename = f"{video_name}_frame_{frame_count:06d}"
+                            img_path = os.path.join(images_dir, f"{base_filename}.jpg")
+                            txt_path = os.path.join(labels_dir, f"{base_filename}.txt")
 
-                        cv2.imwrite(img_path, frame)
+                            cv2.imwrite(img_path, frame)
 
-                        with open(txt_path, 'w') as f:
-                            for box in results[0].boxes:
-                                cls_id = int(box.cls[0])
-                                x_center, y_center, width, height = box.xywhn[0]
-                                f.write(f"{cls_id} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
+                            with open(txt_path, 'w') as f:
+                                for box in results[0].boxes:
+                                    cls_id = int(box.cls[0])
+                                    x_center, y_center, width, height = box.xywhn[0]
+                                    f.write(f"{cls_id} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
 
-                        video_saved_count += 1
-                        total_saved_count += 1
+                            video_saved_count += 1
+                            total_saved_count += 1
 
                         progress_percent = int((frame_count / total_frames) * 100)
                         self.update_status(f"Video {idx+1}/{num_videos}: {video_name} | {progress_percent}% | Đã lưu: {video_saved_count}")

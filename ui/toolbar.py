@@ -10,7 +10,7 @@ class Toolbar(tk.Frame):
 
     def __init__(self, parent, mode_var: tk.StringVar, rename_var: tk.StringVar = None, 
                  on_load_dataset=None, on_save_labels=None, on_search=None, on_rename=None,
-                 on_delete=None, on_auto_annotate=None, on_filter_boxes=None):
+                 on_delete=None, on_auto_annotate=None, on_filter_boxes=None, on_clean_labels=None):
         super().__init__(parent, pady=5)
 
         self.mode_var = mode_var
@@ -22,6 +22,7 @@ class Toolbar(tk.Frame):
         self._on_delete = on_delete
         self._on_auto_annotate = on_auto_annotate
         self._on_filter_boxes = on_filter_boxes
+        self._on_clean_labels = on_clean_labels
 
         self._build()
 
@@ -71,6 +72,16 @@ class Toolbar(tk.Frame):
                 font=("Arial", 10, "bold"),
                 bg="#e67e22", fg="white",
                 command=self._on_filter_boxes,
+            ).pack(side=tk.LEFT, padx=5)
+
+        # --- Nút Dọn Label Rác ---
+        if self._on_clean_labels:
+            tk.Button(
+                self,
+                text="Dọn Label Rác",
+                font=("Arial", 10, "bold"),
+                bg="#c0392b", fg="white",
+                command=self._on_clean_labels,
             ).pack(side=tk.LEFT, padx=5)
 
         # --- Tìm kiếm ảnh ---

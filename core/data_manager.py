@@ -137,6 +137,56 @@ class DataManager:
             return False
 
     # ----------------------------------------------------------
+    # Dọn dẹp nhãn mồ côi
+    # ----------------------------------------------------------
+    def clean_orphan_labels(self, folder: str, mode: str) -> int:
+        """Quét và xoá các file .txt không có ảnh (.jpg hoặc .png) đi kèm."""
+        removed_count = 0
+        if mode == "yolo_dataset":
+            labels_dir = os.path.join(folder, "labels")
+            if not os.path.isdir(labels_dir):
+                return 0
+            
+            # Quét tất cả .txt trong labels/
+            for txt_file in glob.glob(os.path.join(labels_dir, "**", "*.txt"), recursive=True):
+                if os.path.basename(txt_file) == "classes.txt" or os.path.basename(txt_file) == "data.yaml":
+                    continue
+                    
+                p = pathlib.Path(txt_file)
+                parts = list(p.parts)
+                idx = None
+                for i in range(len(parts) - 1, -1, -1):
+                    if parts[i].lower() == "labels":
+                        idx = i
+                        break
+                
+                if idx is not None:
+                    parts[idx] = "images"
+                
+                img_base = str(pathlib.Path(*parts).with_suffix(""))
+                
+                if not (os.path.exists(img_base + ".jpg") or os.path.exists(img_base + ".png")):
+                    try:
+                        os.remove(txt_file)
+                        removed_count += 1
+                    except Exception:
+                        pass
+        else:
+            # Chế độ cùng thư mục
+            for txt_file in glob.glob(os.path.join(folder, "*.txt")):
+                if os.path.basename(txt_file) == "classes.txt":
+                    continue
+                base = os.path.splitext(txt_file)[0]
+                if not (os.path.exists(base + ".jpg") or os.path.exists(base + ".png")):
+                    try:
+                        os.remove(txt_file)
+                        removed_count += 1
+                    except Exception:
+                        pass
+                        
+        return removed_count
+
+    # ----------------------------------------------------------
     # Tải cấu hình YAML (data.yaml)
     # ----------------------------------------------------------
     @staticmethod

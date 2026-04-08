@@ -56,6 +56,7 @@ class YoloReviewerApp:
             on_delete=self.delete_current_item,
             on_auto_annotate=self.launch_auto_annotator,
             on_filter_boxes=self.filter_duplicate_boxes,
+            on_clean_labels=self.clean_orphan_labels_action,
         )
         self.toolbar.pack(side=tk.TOP, fill=tk.X)
 
@@ -431,6 +432,44 @@ class YoloReviewerApp:
             f"- Số ảnh phát hiện trùng lặp: {processed_images}\n"
             f"- Tổng số bounding box đã bị xoá: {removed_boxes}"
         )
+
+    # ----------------------------------------------------------
+    # Dọn dẹp nhãn
+    # ----------------------------------------------------------
+    def clean_orphan_labels_action(self):
+        """Xoá các file .txt không có ảnh đi kèm."""
+        if not self.dataset_dir:
+            messagebox.showinfo("Thông báo", "Vui lòng tải thư mục dữ liệu trước.")
+            return
+            
+        if not messagebox.askyesno("Xác nhận", "Thao tác này sẽ quét toàn bộ thư mục và xoá các file nhãn (.txt) (không có ảnh .jpg/.png đi kèm).\n\nBạn có chắc chắn muốn thực hiện?"):
+            return
+            
+        # UI Progress
+        from tkinter import ttk
+        progress_win = tk.Toplevel(self.root)
+        progress_win.title("Đang dọn dẹp")
+        progress_win.geometry("300x100")
+        progress_win.transient(self.root)
+        progress_win.grab_set()
+
+        tk.Label(progress_win, text="Đang quét tìm file label rác...", font=("Arial", 10)).pack(pady=10)
+        progress = ttk.Progressbar(progress_win, length=250, mode='indeterminate')
+        progress.pack(pady=10)
+        progress.start(10)
+        progress_win.update()
+
+        removed = 0
+        try:
+            mode = self.mode_var.get()
+            removed = self.data_manager.clean_orphan_labels(self.dataset_dir, mode)
+        except Exception as e:
+            messagebox.showerror("Lỗi", f"Có lỗi xảy ra: {e}")
+        finally:
+            if progress_win.winfo_exists():
+                progress_win.destroy()
+                
+        messagebox.showinfo("Hoàn tất", f"Đã quét xong toàn bộ thư mục.\n- Số file label (.txt) đã bị xoá: {removed}")
 
     # ----------------------------------------------------------
     # Điều hướng và Tự động Lưu

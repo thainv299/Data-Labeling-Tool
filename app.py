@@ -427,14 +427,38 @@ class YoloReviewerApp:
         )
 
     # ----------------------------------------------------------
-    # Điều hướng
+    # Điều hướng và Tự động Lưu
     # ----------------------------------------------------------
+    def _auto_save_current_labels(self):
+        """Tự động lưu nhãn của ảnh hiện tại trước khi chuyển sang ảnh khác."""
+        if not self.image_paths:
+            return
+
+        labels = self.canvas_panel.get_labels()
+        img_path = self.image_paths[self.current_idx]
+        mode = self.mode_var.get()
+        txt_path = self.data_manager.get_label_path(img_path, mode)
+
+        if not labels:
+            # Nếu không có nhãn (có thể do xóa hết), đảm bảo xóa file txt cũ nếu tồn tại
+            if os.path.exists(txt_path):
+                try:
+                    os.remove(txt_path)
+                except OSError:
+                    pass
+            return
+
+        # Ghi đè file nếu có nhãn
+        self.data_manager.save_labels(txt_path, labels)
+
     def prev_image(self):
         if self.current_idx > 0:
+            self._auto_save_current_labels()
             self.current_idx -= 1
             self.load_image()
 
     def next_image(self):
         if self.current_idx < len(self.image_paths) - 1:
+            self._auto_save_current_labels()
             self.current_idx += 1
             self.load_image()

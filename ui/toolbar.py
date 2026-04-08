@@ -10,7 +10,7 @@ class Toolbar(tk.Frame):
 
     def __init__(self, parent, mode_var: tk.StringVar, rename_var: tk.StringVar = None, 
                  on_load_dataset=None, on_save_labels=None, on_search=None, on_rename=None,
-                 on_delete=None, on_auto_annotate=None):
+                 on_delete=None, on_auto_annotate=None, on_filter_boxes=None):
         super().__init__(parent, pady=5)
 
         self.mode_var = mode_var
@@ -21,6 +21,7 @@ class Toolbar(tk.Frame):
         self._on_rename = on_rename
         self._on_delete = on_delete
         self._on_auto_annotate = on_auto_annotate
+        self._on_filter_boxes = on_filter_boxes
 
         self._build()
 
@@ -61,6 +62,16 @@ class Toolbar(tk.Frame):
             bg="#8e44ad", fg="white",
             command=self._on_auto_annotate,
         ).pack(side=tk.LEFT, padx=5)
+
+        # --- Nút Lọc Box Trùng ---
+        if self._on_filter_boxes:
+            tk.Button(
+                self,
+                text="Lọc Box Trùng",
+                font=("Arial", 10, "bold"),
+                bg="#e67e22", fg="white",
+                command=self._on_filter_boxes,
+            ).pack(side=tk.LEFT, padx=5)
 
         # --- Tìm kiếm ảnh ---
         search_frame = tk.Frame(self)

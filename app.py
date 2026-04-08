@@ -55,6 +55,7 @@ class YoloReviewerApp:
             on_rename=self.rename_current_item,
             on_delete=self.delete_current_item,
             on_auto_annotate=self.launch_auto_annotator,
+            on_filter_boxes=self.filter_duplicate_boxes,
         )
         self.toolbar.pack(side=tk.TOP, fill=tk.X)
 
@@ -283,11 +284,15 @@ class YoloReviewerApp:
         if not self.image_paths:
             return
 
+        labels = self.canvas_panel.get_labels()
+        if not labels:
+            messagebox.showwarning("Không có nhãn", "Ảnh này chưa có đối tượng nào được nhận diện/gán nhãn. Không thể lưu tệp nhãn trống.")
+            return
+
         img_path = self.image_paths[self.current_idx]
         mode = self.mode_var.get()
         txt_path = self.data_manager.get_label_path(img_path, mode)
 
-        labels = self.canvas_panel.get_labels()
         self.data_manager.save_labels(txt_path, labels)
         self.status_bar.set_text(f"Đã lưu nhãn: {os.path.basename(img_path)}")
 
@@ -312,6 +317,114 @@ class YoloReviewerApp:
         """Mở cửa sổ tự động gán nhãn."""
         sub_root = tk.Toplevel(self.root)
         AutoAnnotatorApp(sub_root)
+
+    # ----------------------------------------------------------
+    # Lọc Bounding Box Trùng
+    # ----------------------------------------------------------
+    def filter_duplicate_boxes(self):
+        """Lọc và xoá các bounding box trùng lặp (IoU > 0.9) trên toàn bộ dataset."""
+        if not self.image_paths:
+            messagebox.showinfo("Thông báo", "Vui lòng tải thư mục dữ liệu trước.")
+            return
+            
+        if not messagebox.askyesno("Xác nhận", "Thao tác này sẽ quét toàn bộ ảnh và xoá các bounding box bị trùng lặp (IoU > 0.9).\nBạn có chắc chắn muốn tiếp tục?"):
+            return
+            
+        def calculate_iou(b1, b2):
+            _, xc1, yc1, w1, h1 = b1
+            _, xc2, yc2, w2, h2 = b2
+            xmin1, ymin1 = xc1 - w1/2, yc1 - h1/2
+            xmax1, ymax1 = xc1 + w1/2, yc1 + h1/2
+            xmin2, ymin2 = xc2 - w2/2, yc2 - h2/2
+            xmax2, ymax2 = xc2 + w2/2, yc2 + h2/2
+            
+            ixmin = max(xmin1, xmin2)
+            iymin = max(ymin1, ymin2)
+            ixmax = min(xmax1, xmax2)
+            iymax = min(ymax1, ymax2)
+            
+            iw = max(0, ixmax - ixmin)
+            ih = max(0, iymax - iymin)
+            
+            if iw <= 0 or ih <= 0:
+                return 0.0
+                
+            inter_area = iw * ih
+            union_area = (w1 * h1) + (w2 * h2) - inter_area
+            return inter_area / union_area if union_area > 0 else 0.0
+
+        mode = self.mode_var.get()
+        processed_images = 0
+        removed_boxes = 0
+        total_images = len(self.image_paths)
+
+        # Hiện thanh tiến trình để UI không bị "Not Responding"
+        from tkinter import ttk
+        progress_win = tk.Toplevel(self.root)
+        progress_win.title("Đang xử lý")
+        progress_win.geometry("350x120")
+        progress_win.transient(self.root)
+        progress_win.grab_set()
+
+        tk.Label(progress_win, text="Đang lọc các bounding box trùng lặp...", font=("Arial", 10)).pack(pady=10)
+        progress = ttk.Progressbar(progress_win, length=280, mode='determinate')
+        progress.pack(pady=10)
+        progress["maximum"] = total_images
+        
+        lbl_status = tk.Label(progress_win, text=f"0 / {total_images}", font=("Arial", 9))
+        lbl_status.pack()
+
+        progress_win.update()
+
+        try:
+            for i, img_path in enumerate(self.image_paths):
+                txt_path = self.data_manager.get_label_path(img_path, mode)
+                labels = self.data_manager.load_labels(txt_path)
+                if labels:
+                    new_labels = []
+                    removed_in_this_file = False
+                    
+                    for current_box in labels:
+                        is_duplicate = False
+                        for kept_box in new_labels:
+                            if calculate_iou(current_box, kept_box) > 0.9:
+                                is_duplicate = True
+                                break
+                        
+                        if not is_duplicate:
+                            new_labels.append(current_box)
+                        else:
+                            removed_in_this_file = True
+                            removed_boxes += 1
+                    
+                    if removed_in_this_file:
+                        if len(new_labels) == 0:
+                            if os.path.exists(txt_path):
+                                os.remove(txt_path)
+                        else:
+                            self.data_manager.save_labels(txt_path, new_labels)
+                        processed_images += 1
+
+                # Cập nhật thanh tiến trình (cập nhật UI sau mỗi 10 ảnh hoặc ở ảnh cuối cùng)
+                if i % 10 == 0 or i == total_images - 1:
+                    progress["value"] = i + 1
+                    lbl_status.config(text=f"{i + 1} / {total_images}")
+                    progress_win.update()
+
+        except Exception as e:
+            messagebox.showerror("Lỗi", f"Đã xảy ra lỗi trong quá trình quét:\n{str(e)}")
+        finally:
+            if progress_win.winfo_exists():
+                progress_win.destroy()
+
+        self.load_image()
+        
+        messagebox.showinfo(
+            "Hoàn tất", 
+            f"Đã dọn dẹp bộ dữ liệu.\n"
+            f"- Số ảnh phát hiện trùng lặp: {processed_images}\n"
+            f"- Tổng số bounding box đã bị xoá: {removed_boxes}"
+        )
 
     # ----------------------------------------------------------
     # Điều hướng

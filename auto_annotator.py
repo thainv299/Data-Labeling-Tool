@@ -104,8 +104,8 @@ class AutoAnnotatorApp:
                         break
 
                     if frame_count % frames_to_skip == 0:
-                        frame_resized = cv2.resize(frame, (input_size, input_size))
-                        results = model(frame_resized, verbose=False)
+                        # Để AI YOLO tự xử lý ảnh gốc (tự động letterbox) thay vì bóp méo ảnh
+                        results = model(frame, imgsz=input_size, verbose=False)
 
                         # Chỉ lưu nếu có phát hiện đối tượng
                         if len(results[0].boxes) > 0:

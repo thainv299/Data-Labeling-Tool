@@ -96,6 +96,8 @@ class YoloReviewerApp:
         # Gắn phím tắt hệ thống
         self.root.bind("<Left>", lambda e: self.prev_image())
         self.root.bind("<Right>", lambda e: self.next_image())
+        self.root.bind("a", lambda e: self.prev_image())
+        self.root.bind("d", lambda e: self.next_image())
         self.root.bind("<Return>", lambda e: self.canvas_panel.confirm_draft())
         self.root.bind("<Control-z>", lambda e: self.canvas_panel.undo_label())
         self.root.bind("<Control-s>", lambda e: self.save_labels())

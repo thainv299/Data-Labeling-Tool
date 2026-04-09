@@ -2,8 +2,9 @@
 # app.py — Controller chính của ứng dụng
 # ============================================================
 import os
+import glob
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, simpledialog
 from PIL import Image
 
 from core.config import APP_TITLE, APP_GEOMETRY, CLASSES as DEFAULT_CLASSES
@@ -13,6 +14,10 @@ from ui.class_panel import ClassPanel
 from ui.canvas_panel import CanvasPanel
 from ui.status_bar import StatusBar
 from auto_annotator import AutoAnnotatorApp
+from scripts.split_dataset import DatasetSplitterApp
+from scripts.resize_dataset import resize_images
+from scripts.reindex_license_plates import change_label_id
+from scripts.cleanup_dataset import cleanup_unmatched
 
 
 class YoloReviewerApp:
@@ -37,8 +42,26 @@ class YoloReviewerApp:
         self.data_manager = DataManager()
 
         # --- Khởi tạo giao diện ---
+        self._setup_menu()
         self._setup_ui()
         self._bind_keys()
+
+    # ----------------------------------------------------------
+    # Menu Bar
+    # ----------------------------------------------------------
+    def _setup_menu(self):
+        """Tạo thanh menu trên cùng chứa các công cụ tiện ích."""
+        menubar = tk.Menu(self.root)
+        self.root.config(menu=menubar)
+
+        # Menu "Công cụ"
+        tools_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Công cụ", menu=tools_menu)
+
+        tools_menu.add_command(label="Chia Dataset (Train/Valid/Test)", command=self.launch_split_dataset)
+        tools_menu.add_command(label="Resize ảnh hàng loạt", command=self.launch_resize_images)
+        tools_menu.add_command(label="Đổi Class ID hàng loạt", command=self.launch_reindex_labels)
+        tools_menu.add_command(label="Đồng bộ Ảnh ↔ Nhãn (Cleanup)", command=self.launch_cleanup_dataset)
 
     # ----------------------------------------------------------
     # Khởi tạo giao diện
@@ -509,3 +532,36 @@ class YoloReviewerApp:
             self._auto_save_current_labels()
             self.current_idx += 1
             self.load_image()
+
+    # ----------------------------------------------------------
+    # Tích hợp Scripts tiện ích
+    # ----------------------------------------------------------
+    def launch_split_dataset(self):
+        """Mở cửa sổ chia dataset Train/Valid/Test."""
+        sub_root = tk.Toplevel(self.root)
+        DatasetSplitterApp(sub_root)
+
+    def launch_resize_images(self):
+        """Mở hộp thoại chọn thư mục rồi resize ảnh hàng loạt."""
+        folder = filedialog.askdirectory(title="Chọn thư mục chứa ảnh cần resize")
+        if folder:
+            resize_images(folder, max_size=640)
+
+    def launch_reindex_labels(self):
+        """Mở hộp thoại đổi Class ID hàng loạt."""
+        folder = filedialog.askdirectory(title="Chọn thư mục Dataset chứa file nhãn (.txt)")
+        if not folder:
+            return
+        old_id = simpledialog.askinteger("Class ID cũ", "Nhập Class ID cần đổi (VD: 0):", initialvalue=0)
+        if old_id is None:
+            return
+        new_id = simpledialog.askinteger("Class ID mới", f"Đổi Class {old_id} thành ID mới (VD: 4):", initialvalue=4)
+        if new_id is None:
+            return
+        change_label_id(folder, old_id=old_id, new_id=new_id)
+
+    def launch_cleanup_dataset(self):
+        """Mở hộp thoại so khớp và dọn dẹp file ảnh/nhãn không có cặp."""
+        folder = filedialog.askdirectory(title="Chọn thư mục Dataset cần đồng bộ (quét đệ quy)")
+        if folder:
+            cleanup_unmatched(folder)

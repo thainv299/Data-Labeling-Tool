@@ -101,3 +101,5 @@ logs/
 core/__init__.py
 ui/__init__.py
 AI_CONTEXT.md
+*/__init__.py
+

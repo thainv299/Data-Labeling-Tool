@@ -1,7 +1,6 @@
 import os
 import glob
-import cv2
-import numpy as np
+from PIL import Image
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from tkinter import ttk
@@ -9,7 +8,7 @@ from tkinter import ttk
 def resize_images(folder_path, max_size=640):
     """
     Quét tìm tất cả ảnh trong thư mục và resize sao cho cạnh lớn nhất <= max_size
-    bằng OpenCV với thuật toán CUBIC.
+    mà vẫn giữ nguyên tỷ lệ khung hình (aspect ratio).
     """
     # Tìm tất cả ảnh
     image_paths = []
@@ -21,7 +20,7 @@ def resize_images(folder_path, max_size=640):
         return
 
     msg = (f"Tìm thấy {len(image_paths)} ảnh.\n"
-           f"Chương trình sẽ dùng OpenCV (CUBIC) để resize toàn bộ ảnh về chuẩn dài nhất = {max_size}px.\n"
+           f"Chương trình sẽ tự động thay đổi kích thước toàn bộ ảnh về chuẩn dài nhất = {max_size}px.\n"
            "Các file nhãn (.txt) không bị ảnh hưởng do dùng toạ độ tương đối.\n\n"
            "QUAN TRỌNG: Ảnh gốc sẽ bị GHI ĐÈ để giảm dung lượng lưu trữ.\n"
            "Bạn có muốn tiếp tục?")
@@ -34,7 +33,7 @@ def resize_images(folder_path, max_size=640):
     progress_win.title("Đang xử lý")
     progress_win.geometry("350x120")
     
-    tk.Label(progress_win, text=f"Đang resize về {max_size}px (OpenCV CUBIC)...", font=("Arial", 10)).pack(pady=10)
+    tk.Label(progress_win, text=f"Đang resize về {max_size}px (Chất lượng cao)...", font=("Arial", 10)).pack(pady=10)
     progress = ttk.Progressbar(progress_win, length=280, mode='determinate')
     progress.pack(pady=10)
     progress["maximum"] = len(image_paths)
@@ -51,24 +50,18 @@ def resize_images(folder_path, max_size=640):
         for i, img_path in enumerate(image_paths):
             original_size = os.path.getsize(img_path)
             
-            # Đọc ảnh dùng numpy để hỗ trợ đường dẫn tiếng Việt/Unicode trên Windows
-            img = cv2.imdecode(np.fromfile(img_path, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
-            if img is not None:
-                h, w = img.shape[:2]
+            with Image.open(img_path) as img:
+                w, h = img.size
                 if max(w, h) > max_size:
                     # Tính toán tỷ lệ
                     scale = max_size / float(max(w, h))
                     new_w = int(w * scale)
                     new_h = int(h * scale)
                     
-                    # Resize dùng OpenCV CUBIC
-                    img_resized = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
-                    
-                    # Ghi đè (Sử dụng encode để hỗ trợ Unicode)
-                    extension = os.path.splitext(img_path)[1]
-                    _, img_buffer = cv2.imencode(extension, img_resized, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
-                    img_buffer.tofile(img_path)
-                    
+                    # Resize dùng PIL LANCZOS (Chất lượng cao nhất khi thu nhỏ)
+                    img_resized = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                    # Ghi đè (Sử dụng format gốc)
+                    img_resized.save(img_path, quality=90, optimize=True)
                     processed_count += 1
                     
                     new_size = os.path.getsize(img_path)

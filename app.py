@@ -18,7 +18,7 @@ from scripts.split_dataset import DatasetSplitterApp
 from scripts.resize_dataset import resize_images
 from scripts.reindex_license_plates import change_label_id
 from scripts.cleanup_dataset import cleanup_unmatched
-from scripts.filter_large_boxes import filter_large_boxes
+from scripts.filter_large_boxes import filter_outlier_boxes
 
 
 class YoloReviewerApp:
@@ -64,7 +64,7 @@ class YoloReviewerApp:
         tools_menu.add_command(label="Đổi Class ID hàng loạt", command=self.launch_reindex_labels)
         tools_menu.add_command(label="Đồng bộ Ảnh ↔ Nhãn (Cleanup)", command=self.launch_cleanup_dataset)
         tools_menu.add_separator()
-        tools_menu.add_command(label="Lọc Box 'Nhầm' (Quá lớn)", command=self.launch_filter_large_boxes)
+        tools_menu.add_command(label="Lọc Box 'Nhầm' (Diện tích TB)", command=self.launch_filter_large_boxes)
 
     # ----------------------------------------------------------
     # Khởi tạo giao diện
@@ -570,10 +570,10 @@ class YoloReviewerApp:
             cleanup_unmatched(folder)
 
     def launch_filter_large_boxes(self):
-        """Mở hộp thoại lọc các box nhận diện nhầm (quá lớn)."""
+        """Mở hộp thoại lọc các box nhận diện nhầm (diện tích bất thường)."""
         if self.dataset_dir:
-            filter_large_boxes(self.dataset_dir)
+            filter_outlier_boxes(self.dataset_dir)
         else:
             folder = filedialog.askdirectory(title="Chọn thư mục Dataset để lọc box quá khổ")
             if folder:
-                filter_large_boxes(folder)
+                filter_outlier_boxes(folder)

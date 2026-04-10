@@ -129,7 +129,7 @@ class CanvasPanel(tk.Frame):
 
         # Resize ảnh
         img_resized = self.original_image.resize(
-            (self.img_w_disp, self.img_h_disp), Image.Resampling.BICUBIC,
+            (self.img_w_disp, self.img_h_disp), Image.Resampling.LANCZOS,
         )
         self.photo = ImageTk.PhotoImage(img_resized)
 

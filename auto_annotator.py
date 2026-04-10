@@ -57,6 +57,13 @@ class AutoAnnotatorApp:
             variable=self.resize_var, fg="#c0392b", font=("Arial", 9, "bold")
         ).pack(pady=2)
 
+        self.save_background_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(
+            self.tab_video,
+            text="Lưu ảnh Background: Lưu cả frame không có đối tượng (để giảm False Positive khi train)",
+            variable=self.save_background_var, fg="#2980b9", font=("Arial", 9, "bold")
+        ).pack(pady=2)
+
         self.btn_start_video = tk.Button(self.tab_video, text="BẮT ĐẦU GÁN NHÃN", font=("Arial", 12, "bold"), bg="#4CAF50", fg="white", command=self.start_processing_video)
         self.btn_start_video.pack(pady=10)
         
@@ -151,8 +158,10 @@ class AutoAnnotatorApp:
 
                     if frame_count % frames_to_skip == 0:
                         results = model(frame, imgsz=input_size, verbose=False)
+                        has_objects = len(results[0].boxes) > 0
 
-                        if len(results[0].boxes) > 0:
+                        # Lưu nếu có đối tượng, hoặc bật tuỳ chọn lưu background
+                        if has_objects or self.save_background_var.get():
                             base_filename = f"{video_name}_frame_{frame_count:06d}"
                             img_path = os.path.join(images_dir, f"{base_filename}.jpg")
                             txt_path = os.path.join(labels_dir, f"{base_filename}.txt")
@@ -162,18 +171,27 @@ class AutoAnnotatorApp:
                                 if max(w, h) > 640:
                                     scale = 640.0 / float(max(w, h))
                                     new_w, new_h = int(w * scale), int(h * scale)
-                                    frame_to_save = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
+                                    frame_to_save = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
                                 else:
                                     frame_to_save = frame
                                 cv2.imwrite(img_path, frame_to_save)
                             else:
                                 cv2.imwrite(img_path, frame)
 
-                            with open(txt_path, 'w') as f:
-                                for box in results[0].boxes:
-                                    cls_id = int(box.cls[0])
-                                    x_center, y_center, width, height = box.xywhn[0]
-                                    f.write(f"{cls_id} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
+                            if has_objects:
+                                # Ghi file nhãn bình thường
+                                with open(txt_path, 'w') as f:
+                                    for box in results[0].boxes:
+                                        cls_id = int(box.cls[0])
+                                        x_center, y_center, width, height = box.xywhn[0]
+                                        # Lọc box quá lớn (90% frame) trừ Bus(5) và Truck(6) 
+                                        # nhằm loại bỏ các nhận diện nhầm bao phủ toàn cảnh.
+                                        if (float(width) > 0.9 or float(height) > 0.9) and cls_id not in [5, 6]:
+                                            continue
+                                        f.write(f"{cls_id} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
+                            else:
+                                # Ảnh background: tạo file .txt rỗng (chuẩn YOLO)
+                                open(txt_path, 'w').close()
 
                             video_saved_count += 1
                             total_saved_count += 1
@@ -271,6 +289,9 @@ class AutoAnnotatorApp:
                     if original_cls_id in self.mapping_dict:
                         new_cls_id = self.mapping_dict[original_cls_id]
                         x_center, y_center, width, height = box.xywhn[0]
+                        # Lọc box quá lớn (90% frame) trừ Bus(5) và Truck(6) 
+                        if (float(width) > 0.9 or float(height) > 0.9) and new_cls_id not in [5, 6]:
+                            continue
                         boxes_to_append.append(f"{new_cls_id} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
                 
                 if boxes_to_append:

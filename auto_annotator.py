@@ -92,6 +92,24 @@ class AutoAnnotatorApp:
         self.lbl_status_dataset = tk.Label(self.tab_dataset, text="Sẵn sàng...", fg="blue")
         self.lbl_status_dataset.pack()
 
+        # ====== TAB 3: GÁN NHÃN BỔ SUNG (SUPPLEMENTAL) ======
+        self.tab_supp = tk.Frame(self.notebook)
+        self.notebook.add(self.tab_supp, text="Gán nhãn bổ sung (Missed Labels)")
+
+        frame_supp = tk.LabelFrame(self.tab_supp, text="Chọn Thư mục Dataset để vẽ bù nhãn còn thiếu", padx=10, pady=10)
+        frame_supp.pack(fill="x", padx=10, pady=5)
+        self.supp_dir = tk.StringVar()
+        tk.Entry(frame_supp, textvariable=self.supp_dir, width=58, state='readonly').pack(side="left", padx=5)
+        tk.Button(frame_supp, text="Browse", command=lambda: self.supp_dir.set(filedialog.askdirectory())).pack(side="left")
+
+        tk.Label(self.tab_supp, text="* Chế độ này dùng cho các lớp: Person, Bicycle, Motorcycle, Car, Bus, Truck.\n* Chỉ thêm nhãn nếu AI phát hiện vật thể ở vùng TRỐNG (IoU với nhãn cũ < 0.3).\n* Tự động áp dụng Mapping: {0:0, 1:1, 2:2, 3:3, 5:5, 7:6}", justify="left", fg="#2c3e50", font=("Arial", 9, "italic")).pack(pady=10, padx=10, anchor="w")
+
+        self.btn_start_supp = tk.Button(self.tab_supp, text="BẮT ĐẦU VẼ BÙ NHÃN", font=("Arial", 12, "bold"), bg="#3498db", fg="white", command=self.start_processing_supplemental)
+        self.btn_start_supp.pack(pady=10)
+        
+        self.lbl_status_supp = tk.Label(self.tab_supp, text="Sẵn sàng...", fg="blue")
+        self.lbl_status_supp.pack()
+
     # --- BROWSER METHODS ---
     def browse_model(self):
         path = filedialog.askopenfilename(filetypes=[("YOLO Model", "*.pt *.engine")])
@@ -260,7 +278,13 @@ class AutoAnnotatorApp:
             total_images = len(image_paths)
             total_added_boxes = 0
 
+            # VÒNG LẶP TUẦN TỰ TỪNG ẢNH (SAFE MODE)
+            # Chắc chắn tương thích với mọi loại Engine TensorRT (kể cả Batch=1)
             for i, img_path in enumerate(image_paths):
+                # Chạy AI cho duy nhất 1 ảnh
+                results = model.predict(source=img_path, imgsz=640, verbose=False)
+                result = results[0] # Chỉ lấy kết quả đầu tiên
+
                 import pathlib
                 p = pathlib.Path(img_path)
                 parts = list(p.parts)
@@ -274,23 +298,16 @@ class AutoAnnotatorApp:
                     parts[idx] = "labels"
                     label_path = str(pathlib.Path(*parts).with_suffix(".txt"))
                 else:
-                    # Chế độ cùng thư mục
                     label_path = os.path.splitext(img_path)[0] + ".txt"
 
-                frame = cv2.imread(img_path)
-                if frame is None:
-                    continue
-
-                results = model(frame, imgsz=640, verbose=False)
-                
                 boxes_to_append = []
-                for box in results[0].boxes:
+                for box in result.boxes:
                     original_cls_id = int(box.cls[0])
                     if original_cls_id in self.mapping_dict:
                         new_cls_id = self.mapping_dict[original_cls_id]
-                        x_center, y_center, width, height = box.xywhn[0]
+                        x_center, y_center, width, height = [float(x) for x in box.xywhn[0]]
                         # Lọc box quá lớn (90% frame) trừ Bus(5) và Truck(6) 
-                        if (float(width) > 0.9 or float(height) > 0.9) and new_cls_id not in [5, 6]:
+                        if (width > 0.9 or height > 0.9) and new_cls_id not in [5, 6]:
                             continue
                         boxes_to_append.append(f"{new_cls_id} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
                 
@@ -302,9 +319,10 @@ class AutoAnnotatorApp:
                             f.write(line_box)
                     total_added_boxes += len(boxes_to_append)
 
+                # Cập nhật UI
                 if i % 10 == 0 or i == total_images - 1:
-                    percent = int((i / total_images) * 100)
-                    self.update_status_dataset(f"Tiến độ: {percent}% ({i}/{total_images}) | Đã gán thêm: {total_added_boxes} boxes")
+                    percent = int(((i + 1) / total_images) * 100)
+                    self.update_status_dataset(f"Tiến độ: {percent}% ({i + 1}/{total_images}) | Đã gán thêm: {total_added_boxes} boxes")
 
             self.update_status_dataset(f"Hoàn thành! Đã cập nhật xong {total_images} ảnh.")
             messagebox.showinfo("Thành công", f"Quá trình Auto Annotate Dataset hoàn tất!\nĐã quét {total_images} ảnh.\nĐược bổ sung thêm {total_added_boxes} bounding box mới.")
@@ -315,6 +333,118 @@ class AutoAnnotatorApp:
             self.root.after(0, lambda: messagebox.showerror("Lỗi", error_msg))
         finally:
             self.root.after(0, lambda: self.btn_start_dataset.config(state="normal", text="BẮT ĐẦU CẬP NHẬT DATASET") if self.btn_start_dataset.winfo_exists() else None)
+
+    # ========================================================
+    # TAB 3: GÁN NHÃN BỔ SUNG (SUPPLEMENTAL)
+    # ========================================================
+    def start_processing_supplemental(self):
+        if not self.model_path.get() or not self.supp_dir.get():
+            messagebox.showwarning("Thiếu thông tin", "Vui lòng chọn đầy đủ Model và Thư mục Dataset!")
+            return
+
+        self.btn_start_supp.config(state="disabled", text="ĐANG XỬ LÝ...")
+        threading.Thread(target=self.process_supplemental, daemon=True).start()
+
+    def _calculate_iou(self, boxA, boxB):
+        # YOLO format: (xc, yc, w, h)
+        ax1, ay1, ax2, ay2 = boxA[0]-boxA[2]/2, boxA[1]-boxA[3]/2, boxA[0]+boxA[2]/2, boxA[1]+boxA[3]/2
+        bx1, by1, bx2, by2 = boxB[0]-boxB[2]/2, boxB[1]-boxB[3]/2, boxB[0]+boxB[2]/2, boxB[1]+boxB[3]/2
+        
+        ix1, iy1, ix2, iy2 = max(ax1, bx1), max(ay1, by1), min(ax2, bx2), min(ay2, by2)
+        iw, ih = max(0, ix2 - ix1), max(0, iy2 - iy1)
+        inter = iw * ih
+        areaA, areaB = boxA[2]*boxA[3], boxB[2]*boxB[3]
+        union = areaA + areaB - inter
+        return inter / union if union > 0 else 0
+
+    def process_supplemental(self):
+        try:
+            self.root.after(0, lambda: self.lbl_status_supp.config(text="Đang tải mô hình YOLO..."))
+            model = YOLO(self.model_path.get(), task="detect")
+            ds_dir = self.supp_dir.get()
+            
+            # Mapping mặc định
+            mapping = {0:0, 1:1, 2:2, 3:3, 5:5, 7:6}
+            target_classes = [0, 1, 2, 3, 5, 6]
+            
+            image_paths = []
+            for ext in ("*.jpg", "*.jpeg", "*.png"):
+                image_paths.extend(glob.glob(os.path.join(ds_dir, "**", ext), recursive=True))
+
+            if not image_paths:
+                messagebox.showinfo("Trống", "Không tìm thấy file ảnh nào!")
+                return
+
+            total_images = len(image_paths)
+            total_added = 0
+
+            # VÒNG LẶP TUẦN TỰ TỪNG ẢNH (SAFE MODE)
+            for i, img_path in enumerate(image_paths):
+                # Chạy AI cho từng ảnh
+                results = model.predict(source=img_path, imgsz=640, verbose=False)
+                result = results[0]
+
+                # Xác định label_path
+                import pathlib
+                p = pathlib.Path(img_path)
+                parts = list(p.parts)
+                idx = None
+                for rev_idx in range(len(parts) - 1, -1, -1):
+                    if parts[rev_idx].lower() == "images":
+                        idx = rev_idx
+                        break
+                if idx is not None:
+                    parts[idx] = "labels"
+                    label_path = str(pathlib.Path(*parts).with_suffix(".txt"))
+                else:
+                    label_path = os.path.splitext(img_path)[0] + ".txt"
+
+                # Đọc nhãn cũ
+                existing_boxes = []
+                if os.path.exists(label_path):
+                    with open(label_path, 'r') as f:
+                        for line in f:
+                            parts_split = line.strip().split()
+                            if len(parts_split) == 5:
+                                existing_boxes.append([int(parts_split[0])] + [float(x) for x in parts_split[1:]])
+
+                boxes_to_add = []
+                for res_box in result.boxes:
+                    cls_ori = int(res_box.cls[0])
+                    if cls_ori in mapping:
+                        new_cls = mapping[cls_ori]
+                        bn = [float(x) for x in res_box.xywhn[0]] # [xc, yc, w, h]
+                        
+                        # Kiểm tra trùng lặp bằng IoU
+                        is_duplicate = False
+                        for eb in existing_boxes:
+                            if eb[0] == new_cls:
+                                if self._calculate_iou(bn, eb[1:]) > 0.3:
+                                    is_duplicate = True
+                                    break
+                        
+                        if not is_duplicate:
+                            boxes_to_add.append(f"{new_cls} {bn[0]:.6f} {bn[1]:.6f} {bn[2]:.6f} {bn[3]:.6f}\n")
+                
+                if boxes_to_add:
+                    os.makedirs(os.path.dirname(label_path), exist_ok=True)
+                    with open(label_path, 'a') as f:
+                        for line in boxes_to_add:
+                            f.write(line)
+                    total_added += len(boxes_to_add)
+
+                # Cập nhật UI
+                if i % 10 == 0 or i == total_images - 1:
+                    percent = int(((i + 1) / total_images) * 100)
+                    self.root.after(0, lambda p=percent, cur=i + 1, tot=total_images, add=total_added: 
+                        self.lbl_status_supp.config(text=f"Tiến độ: {p}% ({cur}/{tot}) | Đã vẽ bù: {add} boxes"))
+
+            self.root.after(0, lambda tot=total_images, add=total_added: 
+                messagebox.showinfo("Hoàn thành", f"Đã quét xong {tot} ảnh.\nĐã vẽ bù thêm {add} nhãn còn thiếu."))
+        except Exception as e:
+            self.root.after(0, lambda msg=str(e): messagebox.showerror("Lỗi", msg))
+        finally:
+            self.root.after(0, lambda: self.btn_start_supp.config(state="normal", text="BẮT ĐẦU VẼ BÙ NHÃN"))
 
     def update_status_dataset(self, text):
         self.root.after(0, lambda: self.lbl_status_dataset.config(text=text))

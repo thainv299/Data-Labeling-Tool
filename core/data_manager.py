@@ -139,52 +139,72 @@ class DataManager:
     # ----------------------------------------------------------
     # Dọn dẹp nhãn mồ côi
     # ----------------------------------------------------------
-    def clean_orphan_labels(self, folder: str, mode: str) -> int:
-        """Quét và xoá các file .txt không có ảnh (.jpg hoặc .png) đi kèm."""
-        removed_count = 0
+    def clean_orphan_labels(self, folder: str, mode: str) -> tuple:
+        """
+        Quét và xoá dữ liệu:
+        1. Xoá file .txt nếu KHÔNG CÓ ảnh đi kèm.
+        2. Xoá file ảnh nếu KHÔNG CÓ file .txt đi kèm (Chỉ xoá nếu mất hoàn toàn file .txt).
+        Trả về (số_nhãn_xoá, số_ảnh_xoá).
+        """
+        deleted_txt = 0
+        deleted_img = 0
+
+        # --- 1. Xoá nhãn mồ côi (TXT without Image) ---
         if mode == "yolo_dataset":
             labels_dir = os.path.join(folder, "labels")
-            if not os.path.isdir(labels_dir):
-                return 0
-            
-            # Quét tất cả .txt trong labels/
-            for txt_file in glob.glob(os.path.join(labels_dir, "**", "*.txt"), recursive=True):
-                if os.path.basename(txt_file) == "classes.txt" or os.path.basename(txt_file) == "data.yaml":
-                    continue
+            images_dir = os.path.join(folder, "images")
+            if os.path.isdir(labels_dir):
+                for txt_file in glob.glob(os.path.join(labels_dir, "**", "*.txt"), recursive=True):
+                    if os.path.basename(txt_file) in ["classes.txt", "data.yaml"]:
+                        continue
                     
-                p = pathlib.Path(txt_file)
-                parts = list(p.parts)
-                idx = None
-                for i in range(len(parts) - 1, -1, -1):
-                    if parts[i].lower() == "labels":
-                        idx = i
-                        break
-                
-                if idx is not None:
-                    parts[idx] = "images"
-                
-                img_base = str(pathlib.Path(*parts).with_suffix(""))
-                
-                if not (os.path.exists(img_base + ".jpg") or os.path.exists(img_base + ".png")):
-                    try:
-                        os.remove(txt_file)
-                        removed_count += 1
-                    except Exception:
-                        pass
+                    p = pathlib.Path(txt_file)
+                    parts = list(p.parts)
+                    idx = None
+                    for i in range(len(parts) - 1, -1, -1):
+                        if parts[i].lower() == "labels":
+                            idx = i
+                            break
+                    if idx is not None:
+                        parts[idx] = "images"
+                    
+                    img_base = str(pathlib.Path(*parts).with_suffix(""))
+                    if not (os.path.exists(img_base + ".jpg") or os.path.exists(img_base + ".png") or os.path.exists(img_base + ".jpeg")):
+                        try:
+                            os.remove(txt_file)
+                            deleted_txt += 1
+                        except Exception: pass
         else:
-            # Chế độ cùng thư mục
             for txt_file in glob.glob(os.path.join(folder, "*.txt")):
                 if os.path.basename(txt_file) == "classes.txt":
                     continue
                 base = os.path.splitext(txt_file)[0]
-                if not (os.path.exists(base + ".jpg") or os.path.exists(base + ".png")):
+                if not (os.path.exists(base + ".jpg") or os.path.exists(base + ".png") or os.path.exists(base + ".jpeg")):
                     try:
                         os.remove(txt_file)
-                        removed_count += 1
-                    except Exception:
-                        pass
-                        
-        return removed_count
+                        deleted_txt += 1
+                    except Exception: pass
+
+        # --- 2. Xoá ảnh mồ côi (Image without TXT) ---
+        all_images = []
+        if mode == "yolo_dataset":
+            images_dir = os.path.join(folder, "images")
+            if os.path.isdir(images_dir):
+                for ext in ("*.jpg", "*.jpeg", "*.png"):
+                    all_images.extend(glob.glob(os.path.join(images_dir, "**", ext), recursive=True))
+        else:
+            for ext in ("*.jpg", "*.jpeg", "*.png"):
+                all_images.extend(glob.glob(os.path.join(folder, ext)))
+
+        for img_path in all_images:
+            txt_path = self.get_label_path(img_path, mode)
+            if not os.path.exists(txt_path):
+                try:
+                    os.remove(img_path)
+                    deleted_img += 1
+                except Exception: pass
+
+        return deleted_txt, deleted_img
 
     # ----------------------------------------------------------
     # Tải cấu hình YAML (data.yaml)

@@ -10,7 +10,8 @@ class Toolbar(tk.Frame):
 
     def __init__(self, parent, mode_var: tk.StringVar, rename_var: tk.StringVar = None, 
                  on_load_dataset=None, on_save_labels=None, on_search=None, on_rename=None,
-                 on_delete=None, on_auto_annotate=None, on_filter_boxes=None, on_clean_labels=None):
+                 on_delete=None, on_auto_annotate=None, on_filter_boxes=None, on_clean_labels=None,
+                 on_copy_static=None):
         super().__init__(parent, pady=5)
 
         self.mode_var = mode_var
@@ -23,6 +24,7 @@ class Toolbar(tk.Frame):
         self._on_auto_annotate = on_auto_annotate
         self._on_filter_boxes = on_filter_boxes
         self._on_clean_labels = on_clean_labels
+        self._on_copy_static = on_copy_static
 
         self._build()
 
@@ -82,6 +84,16 @@ class Toolbar(tk.Frame):
                 font=("Arial", 10, "bold"),
                 bg="#c0392b", fg="white",
                 command=self._on_clean_labels,
+            ).pack(side=tk.LEFT, padx=5)
+
+        # --- Nút Sao chép Box tĩnh ---
+        if self._on_copy_static:
+            tk.Button(
+                self,
+                text="Sao chép Box tĩnh 📋",
+                font=("Arial", 10, "bold"),
+                bg="#2980b9", fg="white",
+                command=self._on_copy_static,
             ).pack(side=tk.LEFT, padx=5)
 
         # --- Tìm kiếm ảnh ---

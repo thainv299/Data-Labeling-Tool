@@ -250,6 +250,13 @@ class CanvasPanel(tk.Frame):
         self.selected_label_indices = {i for i, label in enumerate(self.current_labels) if label[0] == cls_id}
         self.draw_all_labels()
 
+    def get_selected_label(self) -> tuple:
+        """Trả về nhãn đầu tiên đang được chọn (cls_id, xc, yc, w, h)."""
+        if self.selected_label_indices:
+            idx = next(iter(self.selected_label_indices))
+            return self.current_labels[idx]
+        return None
+
     # ----------------------------------------------------------
     # Sự kiện chuột
     # ----------------------------------------------------------

@@ -19,6 +19,8 @@ from scripts.resize_dataset import resize_images
 from scripts.reindex_license_plates import change_label_id
 from scripts.cleanup_dataset import cleanup_unmatched
 from scripts.filter_large_boxes import filter_outlier_boxes
+from scripts.batch_delete_class import BatchDeleteClassApp
+from scripts.static_object_labeler import StaticObjectLabelerApp
 
 
 class YoloReviewerApp:
@@ -64,6 +66,7 @@ class YoloReviewerApp:
         tools_menu.add_command(label="Đổi Class ID hàng loạt", command=self.launch_reindex_labels)
         tools_menu.add_command(label="Đồng bộ Ảnh ↔ Nhãn (Cleanup)", command=self.launch_cleanup_dataset)
         tools_menu.add_separator()
+        tools_menu.add_command(label="Xoá Class hàng loạt (theo dải ảnh)", command=self.launch_batch_delete_class)
         tools_menu.add_command(label="Lọc Box 'Nhầm' (Diện tích TB)", command=self.launch_filter_large_boxes)
 
     # ----------------------------------------------------------
@@ -83,6 +86,7 @@ class YoloReviewerApp:
             on_auto_annotate=self.launch_auto_annotator,
             on_filter_boxes=self.filter_duplicate_boxes,
             on_clean_labels=self.clean_orphan_labels_action,
+            on_copy_static=self.launch_static_object_labeler,
         )
         self.toolbar.pack(side=tk.TOP, fill=tk.X)
 
@@ -127,6 +131,7 @@ class YoloReviewerApp:
         self.root.bind("<Return>", lambda e: self.canvas_panel.confirm_draft())
         self.root.bind("<Control-z>", lambda e: self.canvas_panel.undo_label())
         self.root.bind("<Control-s>", lambda e: self.save_labels())
+        self.root.bind("<Control-b>", lambda e: self.launch_static_object_labeler())
         self.root.bind("<Control-r>", lambda e: self.toolbar.entry_rename.focus_set())
         self.root.bind("<Delete>", lambda e: self.delete_hotkey_handler())
         self.root.bind("<Escape>", lambda e: self.canvas_panel.deselect_label())
@@ -470,34 +475,42 @@ class YoloReviewerApp:
             messagebox.showinfo("Thông báo", "Vui lòng tải thư mục dữ liệu trước.")
             return
             
-        if not messagebox.askyesno("Xác nhận", "Thao tác này sẽ quét toàn bộ thư mục và xoá các file nhãn (.txt) (không có ảnh .jpg/.png đi kèm).\n\nBạn có chắc chắn muốn thực hiện?"):
+        if not messagebox.askyesno("Xác nhận", "Thao tác này sẽ quét toàn bộ thư mục và dọn dẹp:\n1. Các file nhãn (.txt) KHÔNG CÓ ảnh đi kèm.\n2. Các file ảnh (.jpg/.png) KHÔNG CÓ bất kỳ tệp nhãn nào đi kèm.\n\n(Ảnh background có file .txt rỗng sẽ được giữ lại).\n\nBạn có chắc chắn muốn thực hiện?"):
             return
             
         # UI Progress
         from tkinter import ttk
         progress_win = tk.Toplevel(self.root)
         progress_win.title("Đang dọn dẹp")
-        progress_win.geometry("300x100")
+        progress_win.geometry("350x120")
         progress_win.transient(self.root)
         progress_win.grab_set()
 
-        tk.Label(progress_win, text="Đang quét tìm file label rác...", font=("Arial", 10)).pack(pady=10)
-        progress = ttk.Progressbar(progress_win, length=250, mode='indeterminate')
+        tk.Label(progress_win, text="Đang quét và dọn dẹp dữ liệu mồ côi...", font=("Arial", 10)).pack(pady=10)
+        progress = ttk.Progressbar(progress_win, length=280, mode='indeterminate')
         progress.pack(pady=10)
         progress.start(10)
         progress_win.update()
 
-        removed = 0
         try:
             mode = self.mode_var.get()
-            removed = self.data_manager.clean_orphan_labels(self.dataset_dir, mode)
-        except Exception as e:
-            messagebox.showerror("Lỗi", f"Có lỗi xảy ra: {e}")
-        finally:
+            deleted_txt, deleted_img = self.data_manager.clean_orphan_labels(self.dataset_dir, mode)
+            
             if progress_win.winfo_exists():
                 progress_win.destroy()
-                
-        messagebox.showinfo("Hoàn tất", f"Đã quét xong toàn bộ thư mục.\n- Số file label (.txt) đã bị xoá: {removed}")
+
+            messagebox.showinfo(
+                "Thành công", 
+                f"Đã dọn dẹp xong bộ dữ liệu!\n"
+                f"- Xoá {deleted_txt} file nhãn rác.\n"
+                f"- Xoá {deleted_img} file ảnh không có nhãn.\n"
+                f"Dataset hiện đã được đồng bộ 1-1."
+            )
+            self.load_dataset() # Tải lại dataset để cập nhật danh sách
+        except Exception as e:
+            if progress_win.winfo_exists():
+                progress_win.destroy()
+            messagebox.showerror("Lỗi", f"Có lỗi xảy ra: {e}")
 
     # ----------------------------------------------------------
     # Điều hướng và Tự động Lưu
@@ -569,6 +582,25 @@ class YoloReviewerApp:
         if folder:
             cleanup_unmatched(folder)
 
+    def launch_static_object_labeler(self):
+        """Mở hộp thoại sao chép box tĩnh cho dải ảnh."""
+        if not self.image_paths:
+            return
+            
+        box_data = self.canvas_panel.get_selected_label()
+        if not box_data:
+            messagebox.showwarning("Thông báo", "Vui lòng vẽ và CHỌN một khung nhãn (bounding box) trước khi sao chép!")
+            return
+            
+        StaticObjectLabelerApp(
+            self.root,
+            box_data=box_data,
+            current_idx=self.current_idx,
+            image_paths=self.image_paths,
+            data_manager=self.data_manager,
+            mode=self.mode_var.get()
+        )
+
     def launch_filter_large_boxes(self):
         """Mở hộp thoại lọc các box nhận diện nhầm (diện tích bất thường)."""
         if self.dataset_dir:
@@ -577,3 +609,19 @@ class YoloReviewerApp:
             folder = filedialog.askdirectory(title="Chọn thư mục Dataset để lọc box quá khổ")
             if folder:
                 filter_outlier_boxes(folder)
+
+    def launch_batch_delete_class(self):
+        """Mở cửa sổ xoá class hàng loạt."""
+        sub_root = tk.Toplevel(self.root)
+        
+        # Truyền thông tin hiện tại vào nếu có
+        initial_folder = self.dataset_dir
+        initial_class = self.selected_class.get()
+        
+        app = BatchDeleteClassApp(sub_root, initial_folder=initial_folder, initial_class=initial_class)
+        
+        # Nếu có dải ảnh hiện tại, tự động gán gợi ý
+        if self.image_paths:
+            app.start_idx.set(self.current_idx + 1)
+            app.end_idx.set(len(self.image_paths))
+            app.range_mode.set("range")

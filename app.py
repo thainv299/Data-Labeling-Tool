@@ -510,7 +510,7 @@ class YoloReviewerApp:
                 f"- Xoá {deleted_img} file ảnh không có nhãn.\n"
                 f"Dataset hiện đã được đồng bộ 1-1."
             )
-            self.load_dataset() # Tải lại dataset để cập nhật danh sách
+            self.load_dataset(self.dataset_dir) # Tải lại dataset hiện tại để cập nhật danh sách
         except Exception as e:
             if progress_win.winfo_exists():
                 progress_win.destroy()

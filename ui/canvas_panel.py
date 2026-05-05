@@ -25,6 +25,8 @@ class CanvasPanel(tk.Frame):
         self.base_h = 1
         self.original_image = None # PIL Image gốc để resize chất lượng cao
         self.photo = None
+        self.img_w_disp = 1
+        self.img_h_disp = 1
 
         # Trạng thái vẽ (Draft)
         self.selected_label_indices = set()

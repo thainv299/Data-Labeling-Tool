@@ -168,54 +168,41 @@ class AutoAnnotatorApp:
                 
                 frame_count = 0
                 video_saved_count = 0
+                
+                batch_frames = []
+                batch_metas = []
+                batch_size = 4
 
                 while True:
                     ret, frame = cap.read()
                     if not ret:
+                        # Xử lý nốt các frame còn dư trong batch cuối
+                        if batch_frames:
+                            saved_in_batch = self._process_batch_video(model, batch_frames, batch_metas, images_dir, labels_dir)
+                            total_saved_count += saved_in_batch
                         break
 
                     if frame_count % frames_to_skip == 0:
-                        results = model(frame, imgsz=input_size, verbose=False)
-                        has_objects = len(results[0].boxes) > 0
+                        batch_frames.append(frame.copy())
+                        batch_metas.append({
+                            'frame_count': frame_count,
+                            'video_name': video_name,
+                            'total_frames': total_frames,
+                            'idx': idx,
+                            'num_videos': num_videos
+                        })
 
-                        # Lưu nếu có đối tượng, hoặc bật tuỳ chọn lưu background
-                        if has_objects or self.save_background_var.get():
-                            base_filename = f"{video_name}_frame_{frame_count:06d}"
-                            img_path = os.path.join(images_dir, f"{base_filename}.jpg")
-                            txt_path = os.path.join(labels_dir, f"{base_filename}.txt")
-
-                            if self.resize_var.get():
-                                h, w = frame.shape[:2]
-                                if max(w, h) > 640:
-                                    scale = 640.0 / float(max(w, h))
-                                    new_w, new_h = int(w * scale), int(h * scale)
-                                    frame_to_save = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
-                                else:
-                                    frame_to_save = frame
-                                cv2.imwrite(img_path, frame_to_save)
-                            else:
-                                cv2.imwrite(img_path, frame)
-
-                            if has_objects:
-                                # Ghi file nhãn bình thường
-                                with open(txt_path, 'w') as f:
-                                    for box in results[0].boxes:
-                                        cls_id = int(box.cls[0])
-                                        x_center, y_center, width, height = box.xywhn[0]
-                                        # Lọc box quá lớn (90% frame) trừ Bus(5) và Truck(6) 
-                                        # nhằm loại bỏ các nhận diện nhầm bao phủ toàn cảnh.
-                                        if (float(width) > 0.9 or float(height) > 0.9) and cls_id not in [5, 6]:
-                                            continue
-                                        f.write(f"{cls_id} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
-                            else:
-                                # Ảnh background: tạo file .txt rỗng (chuẩn YOLO)
-                                open(txt_path, 'w').close()
-
-                            video_saved_count += 1
-                            total_saved_count += 1
-
+                    if len(batch_frames) >= batch_size:
+                        saved_in_batch = self._process_batch_video(model, batch_frames, batch_metas, images_dir, labels_dir)
+                        video_saved_count += saved_in_batch
+                        total_saved_count += saved_in_batch
+                        
+                        # Cập nhật UI
                         progress_percent = int((frame_count / total_frames) * 100)
                         self.update_status_video(f"Video {idx+1}/{num_videos}: {video_name} | {progress_percent}% | Đã lưu: {video_saved_count}")
+                        
+                        batch_frames = []
+                        batch_metas = []
 
                     frame_count += 1
 
@@ -231,8 +218,56 @@ class AutoAnnotatorApp:
         finally:
             self.root.after(0, lambda: self.btn_start_video.config(state="normal", text="BẮT ĐẦU GÁN NHÃN") if self.btn_start_video.winfo_exists() else None)
 
-    def update_status_video(self, text):
-        self.root.after(0, lambda: self.lbl_status_video.config(text=text))
+    def _process_batch_video(self, model, frames, metas, images_dir, labels_dir):
+        """Xử lý AI cho một batch frame từ video và lưu kết quả."""
+        saved_count = 0
+        try:
+            # Inference cả batch
+            results = model.predict(frames, imgsz=640, half=True, verbose=False)
+            
+            for i, result in enumerate(results):
+                frame = frames[i]
+                meta = metas[i]
+                has_objects = len(result.boxes) > 0
+                
+                # Lưu nếu có đối tượng, hoặc bật tuỳ chọn lưu background
+                if has_objects or self.save_background_var.get():
+                    base_filename = f"{meta['video_name']}_frame_{meta['frame_count']:06d}"
+                    img_path = os.path.join(images_dir, f"{base_filename}.jpg")
+                    txt_path = os.path.join(labels_dir, f"{base_filename}.txt")
+
+                    # Resize nếu cần
+                    if self.resize_var.get():
+                        h, w = frame.shape[:2]
+                        if max(w, h) > 640:
+                            scale = 640.0 / float(max(w, h))
+                            new_w, new_h = int(w * scale), int(h * scale)
+                            frame_to_save = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
+                        else:
+                            frame_to_save = frame
+                        cv2.imwrite(img_path, frame_to_save)
+                    else:
+                        cv2.imwrite(img_path, frame)
+
+                    if has_objects:
+                        with open(txt_path, 'w') as f:
+                            for box in result.boxes:
+                                cls_id = int(box.cls[0])
+                                x_center, y_center, width, height = [float(x) for x in box.xywhn[0]]
+                                # Lọc box quá lớn (90% frame) trừ Bus(5) và Truck(6)
+                                if (width > 0.9 or height > 0.9) and cls_id not in [5, 6]:
+                                    continue
+                                f.write(f"{cls_id} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
+                    else:
+                        open(txt_path, 'w').close()
+                    
+                    saved_count += 1
+        except Exception as e:
+            print(f"Lỗi xử lý batch video: {e}")
+            
+        return saved_count
+
+
 
     # ========================================================
     # TAB 2: XỬ LÝ DATASET CÓ SẴN (APPEND)
@@ -277,52 +312,55 @@ class AutoAnnotatorApp:
 
             total_images = len(image_paths)
             total_added_boxes = 0
+            batch_size = 4  
 
-            # VÒNG LẶP TUẦN TỰ TỪNG ẢNH (SAFE MODE)
-            # Chắc chắn tương thích với mọi loại Engine TensorRT (kể cả Batch=1)
-            for i, img_path in enumerate(image_paths):
-                # Chạy AI cho duy nhất 1 ảnh
-                results = model.predict(source=img_path, imgsz=640, verbose=False)
-                result = results[0] # Chỉ lấy kết quả đầu tiên
-
-                import pathlib
-                p = pathlib.Path(img_path)
-                parts = list(p.parts)
-                idx = None
-                for rev_idx in range(len(parts) - 1, -1, -1):
-                    if parts[rev_idx].lower() == "images":
-                        idx = rev_idx
-                        break
-                        
-                if idx is not None:
-                    parts[idx] = "labels"
-                    label_path = str(pathlib.Path(*parts).with_suffix(".txt"))
-                else:
-                    label_path = os.path.splitext(img_path)[0] + ".txt"
-
-                boxes_to_append = []
-                for box in result.boxes:
-                    original_cls_id = int(box.cls[0])
-                    if original_cls_id in self.mapping_dict:
-                        new_cls_id = self.mapping_dict[original_cls_id]
-                        x_center, y_center, width, height = [float(x) for x in box.xywhn[0]]
-                        # Lọc box quá lớn (90% frame) trừ Bus(5) và Truck(6) 
-                        if (width > 0.9 or height > 0.9) and new_cls_id not in [5, 6]:
-                            continue
-                        boxes_to_append.append(f"{new_cls_id} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
+            # VÒNG LẶP THEO BATCH
+            for i in range(0, total_images, batch_size):
+                batch_paths = image_paths[i : i + batch_size]
                 
-                if boxes_to_append:
-                    os.makedirs(os.path.dirname(label_path), exist_ok=True)
-                    # GHI NỐI TIẾP (a+)
-                    with open(label_path, 'a') as f:
-                        for line_box in boxes_to_append:
-                            f.write(line_box)
-                    total_added_boxes += len(boxes_to_append)
+                # Chạy AI cho cả batch (Sử dụng half=True nếu là GPU để tăng tốc)
+                results = model.predict(source=batch_paths, imgsz=640, half=True, verbose=False)
+
+                for j, result in enumerate(results):
+                    img_path = batch_paths[j]
+                    
+                    import pathlib
+                    p = pathlib.Path(img_path)
+                    parts = list(p.parts)
+                    idx = None
+                    for rev_idx in range(len(parts) - 1, -1, -1):
+                        if parts[rev_idx].lower() == "images":
+                            idx = rev_idx
+                            break
+                            
+                    if idx is not None:
+                        parts[idx] = "labels"
+                        label_path = str(pathlib.Path(*parts).with_suffix(".txt"))
+                    else:
+                        label_path = os.path.splitext(img_path)[0] + ".txt"
+
+                    boxes_to_append = []
+                    for box in result.boxes:
+                        original_cls_id = int(box.cls[0])
+                        if original_cls_id in self.mapping_dict:
+                            new_cls_id = self.mapping_dict[original_cls_id]
+                            x_center, y_center, width, height = [float(x) for x in box.xywhn[0]]
+                            # Lọc box quá lớn (90% frame) trừ Bus(5) và Truck(6) 
+                            if (width > 0.9 or height > 0.9) and new_cls_id not in [5, 6]:
+                                continue
+                            boxes_to_append.append(f"{new_cls_id} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
+                    
+                    if boxes_to_append:
+                        os.makedirs(os.path.dirname(label_path), exist_ok=True)
+                        # GHI NỐI TIẾP (a+)
+                        with open(label_path, 'a') as f:
+                            for line_box in boxes_to_append:
+                                f.write(line_box)
+                        total_added_boxes += len(boxes_to_append)
 
                 # Cập nhật UI
-                if i % 10 == 0 or i == total_images - 1:
-                    percent = int(((i + 1) / total_images) * 100)
-                    self.update_status_dataset(f"Tiến độ: {percent}% ({i + 1}/{total_images}) | Đã gán thêm: {total_added_boxes} boxes")
+                percent = int((min(i + batch_size, total_images) / total_images) * 100)
+                self.update_status_dataset(f"Tiến độ: {percent}% ({min(i + batch_size, total_images)}/{total_images}) | Đã gán thêm: {total_added_boxes} boxes")
 
             self.update_status_dataset(f"Hoàn thành! Đã cập nhật xong {total_images} ảnh.")
             messagebox.showinfo("Thành công", f"Quá trình Auto Annotate Dataset hoàn tất!\nĐã quét {total_images} ảnh.\nĐược bổ sung thêm {total_added_boxes} bounding box mới.")
@@ -377,67 +415,70 @@ class AutoAnnotatorApp:
 
             total_images = len(image_paths)
             total_added = 0
+            batch_size = 4
 
-            # VÒNG LẶP TUẦN TỰ TỪNG ẢNH (SAFE MODE)
-            for i, img_path in enumerate(image_paths):
-                # Chạy AI cho từng ảnh
-                results = model.predict(source=img_path, imgsz=640, verbose=False)
-                result = results[0]
-
-                # Xác định label_path
-                import pathlib
-                p = pathlib.Path(img_path)
-                parts = list(p.parts)
-                idx = None
-                for rev_idx in range(len(parts) - 1, -1, -1):
-                    if parts[rev_idx].lower() == "images":
-                        idx = rev_idx
-                        break
-                if idx is not None:
-                    parts[idx] = "labels"
-                    label_path = str(pathlib.Path(*parts).with_suffix(".txt"))
-                else:
-                    label_path = os.path.splitext(img_path)[0] + ".txt"
-
-                # Đọc nhãn cũ
-                existing_boxes = []
-                if os.path.exists(label_path):
-                    with open(label_path, 'r') as f:
-                        for line in f:
-                            parts_split = line.strip().split()
-                            if len(parts_split) == 5:
-                                existing_boxes.append([int(parts_split[0])] + [float(x) for x in parts_split[1:]])
-
-                boxes_to_add = []
-                for res_box in result.boxes:
-                    cls_ori = int(res_box.cls[0])
-                    if cls_ori in mapping:
-                        new_cls = mapping[cls_ori]
-                        bn = [float(x) for x in res_box.xywhn[0]] # [xc, yc, w, h]
-                        
-                        # Kiểm tra trùng lặp bằng IoU
-                        is_duplicate = False
-                        for eb in existing_boxes:
-                            if eb[0] == new_cls:
-                                if self._calculate_iou(bn, eb[1:]) > 0.3:
-                                    is_duplicate = True
-                                    break
-                        
-                        if not is_duplicate:
-                            boxes_to_add.append(f"{new_cls} {bn[0]:.6f} {bn[1]:.6f} {bn[2]:.6f} {bn[3]:.6f}\n")
+            # VÒNG LẶP THEO BATCH
+            for i in range(0, total_images, batch_size):
+                batch_paths = image_paths[i : i + batch_size]
                 
-                if boxes_to_add:
-                    os.makedirs(os.path.dirname(label_path), exist_ok=True)
-                    with open(label_path, 'a') as f:
-                        for line in boxes_to_add:
-                            f.write(line)
-                    total_added += len(boxes_to_add)
+                # Chạy AI cho cả batch
+                results = model.predict(source=batch_paths, imgsz=640, half=True, verbose=False)
+
+                for j, result in enumerate(results):
+                    img_path = batch_paths[j]
+
+                    # Xác định label_path
+                    import pathlib
+                    p = pathlib.Path(img_path)
+                    parts = list(p.parts)
+                    idx = None
+                    for rev_idx in range(len(parts) - 1, -1, -1):
+                        if parts[rev_idx].lower() == "images":
+                            idx = rev_idx
+                            break
+                    if idx is not None:
+                        parts[idx] = "labels"
+                        label_path = str(pathlib.Path(*parts).with_suffix(".txt"))
+                    else:
+                        label_path = os.path.splitext(img_path)[0] + ".txt"
+
+                    # Đọc nhãn cũ
+                    existing_boxes = []
+                    if os.path.exists(label_path):
+                        with open(label_path, 'r') as f:
+                            for line in f:
+                                parts_split = line.strip().split()
+                                if len(parts_split) == 5:
+                                    existing_boxes.append([int(parts_split[0])] + [float(x) for x in parts_split[1:]])
+
+                    boxes_to_add = []
+                    for res_box in result.boxes:
+                        cls_ori = int(res_box.cls[0])
+                        if cls_ori in mapping:
+                            new_cls = mapping[cls_ori]
+                            bn = [float(x) for x in res_box.xywhn[0]] # [xc, yc, w, h]
+                            
+                            # Kiểm tra trùng lặp bằng IoU
+                            is_duplicate = False
+                            for eb in existing_boxes:
+                                if eb[0] == new_cls:
+                                    if self._calculate_iou(bn, eb[1:]) > 0.3:
+                                        is_duplicate = True
+                                        break
+                            
+                            if not is_duplicate:
+                                boxes_to_add.append(f"{new_cls} {bn[0]:.6f} {bn[1]:.6f} {bn[2]:.6f} {bn[3]:.6f}\n")
+                    
+                    if boxes_to_add:
+                        os.makedirs(os.path.dirname(label_path), exist_ok=True)
+                        with open(label_path, 'a') as f:
+                            for line in boxes_to_add:
+                                f.write(line)
+                        total_added += len(boxes_to_add)
 
                 # Cập nhật UI
-                if i % 10 == 0 or i == total_images - 1:
-                    percent = int(((i + 1) / total_images) * 100)
-                    self.root.after(0, lambda p=percent, cur=i + 1, tot=total_images, add=total_added: 
-                        self.lbl_status_supp.config(text=f"Tiến độ: {p}% ({cur}/{tot}) | Đã vẽ bù: {add} boxes"))
+                percent = int((min(i + batch_size, total_images) / total_images) * 100)
+                self.update_status_supp(f"Tiến độ: {percent}% ({min(i + batch_size, total_images)}/{total_images}) | Đã vẽ bù: {total_added} boxes")
 
             self.root.after(0, lambda tot=total_images, add=total_added: 
                 messagebox.showinfo("Hoàn thành", f"Đã quét xong {tot} ảnh.\nĐã vẽ bù thêm {add} nhãn còn thiếu."))
@@ -447,7 +488,16 @@ class AutoAnnotatorApp:
             self.root.after(0, lambda: self.btn_start_supp.config(state="normal", text="BẮT ĐẦU VẼ BÙ NHÃN"))
 
     def update_status_dataset(self, text):
-        self.root.after(0, lambda: self.lbl_status_dataset.config(text=text))
+        if self.lbl_status_dataset.winfo_exists():
+            self.root.after(0, lambda: self.lbl_status_dataset.config(text=text))
+
+    def update_status_video(self, text):
+        if self.lbl_status_video.winfo_exists():
+            self.root.after(0, lambda: self.lbl_status_video.config(text=text))
+
+    def update_status_supp(self, text):
+        if self.lbl_status_supp.winfo_exists():
+            self.root.after(0, lambda: self.lbl_status_supp.config(text=text))
 
 if __name__ == "__main__":
     root = tk.Tk()

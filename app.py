@@ -65,6 +65,7 @@ class YoloReviewerApp:
         tools_menu.add_command(label="Resize ảnh hàng loạt", command=self.launch_resize_images)
         tools_menu.add_command(label="Đổi Class ID hàng loạt", command=self.launch_reindex_labels)
         tools_menu.add_command(label="Đồng bộ Ảnh ↔ Nhãn (Cleanup)", command=self.launch_cleanup_dataset)
+        tools_menu.add_command(label="Chia nhỏ Dataset thành N phần", command=self.launch_split_parts)
         tools_menu.add_separator()
         tools_menu.add_command(label="Xoá Class hàng loạt (theo dải ảnh)", command=self.launch_batch_delete_class)
         tools_menu.add_command(label="Lọc Box 'Nhầm' (Diện tích TB)", command=self.launch_filter_large_boxes)
@@ -421,13 +422,16 @@ class YoloReviewerApp:
                 txt_path = self.data_manager.get_label_path(img_path, mode)
                 labels = self.data_manager.load_labels(txt_path)
                 if labels:
+                    # Ưu tiên nhãn nhỏ: Sắp xếp theo diện tích (w * h) tăng dần
+                    labels.sort(key=lambda x: x[3] * x[4])
+                    
                     new_labels = []
                     removed_in_this_file = False
                     
                     for current_box in labels:
                         is_duplicate = False
                         for kept_box in new_labels:
-                            if calculate_iou(current_box, kept_box) > 0.9:
+                            if calculate_iou(current_box, kept_box) > 0.45:
                                 is_duplicate = True
                                 break
                         
@@ -581,6 +585,12 @@ class YoloReviewerApp:
         folder = filedialog.askdirectory(title="Chọn thư mục Dataset cần đồng bộ (quét đệ quy)")
         if folder:
             cleanup_unmatched(folder)
+
+    def launch_split_parts(self):
+        """Mở cửa sổ chia nhỏ Dataset thành N phần."""
+        sub_root = tk.Toplevel(self.root)
+        from scripts.split_parts import DatasetPartSplitterApp
+        DatasetPartSplitterApp(sub_root, initial_dir=self.dataset_dir)
 
     def launch_static_object_labeler(self):
         """Mở hộp thoại sao chép box tĩnh cho dải ảnh."""

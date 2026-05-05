@@ -137,7 +137,7 @@ class DataManager:
             return False
 
     # ----------------------------------------------------------
-    # Dọn dẹp nhãn mồ côi
+    # Dọn dẹp nhãn không có ảnh và ảnh không có nhãn
     # ----------------------------------------------------------
     def clean_orphan_labels(self, folder: str, mode: str) -> tuple:
         """
@@ -149,7 +149,7 @@ class DataManager:
         deleted_txt = 0
         deleted_img = 0
 
-        # --- 1. Xoá nhãn mồ côi (TXT without Image) ---
+        # --- 1. Xoá nhãn không có ảnh (TXT without Image) ---
         if mode == "yolo_dataset":
             labels_dir = os.path.join(folder, "labels")
             images_dir = os.path.join(folder, "images")
@@ -185,7 +185,7 @@ class DataManager:
                         deleted_txt += 1
                     except Exception: pass
 
-        # --- 2. Xoá ảnh mồ côi (Image without TXT) ---
+        # --- 2. Xoá ảnh không có nhãn (Image without TXT) ---
         all_images = []
         if mode == "yolo_dataset":
             images_dir = os.path.join(folder, "images")

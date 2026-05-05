@@ -490,7 +490,7 @@ class YoloReviewerApp:
         progress_win.transient(self.root)
         progress_win.grab_set()
 
-        tk.Label(progress_win, text="Đang quét và dọn dẹp dữ liệu mồ côi...", font=("Arial", 10)).pack(pady=10)
+        tk.Label(progress_win, text="Đang quét và dọn dẹp dữ liệu...", font=("Arial", 10)).pack(pady=10)
         progress = ttk.Progressbar(progress_win, length=280, mode='indeterminate')
         progress.pack(pady=10)
         progress.start(10)

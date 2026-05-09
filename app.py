@@ -88,6 +88,7 @@ class YoloReviewerApp:
             on_filter_boxes=self.filter_duplicate_boxes,
             on_clean_labels=self.clean_orphan_labels_action,
             on_copy_static=self.launch_static_object_labeler,
+            on_filter_class=self.filter_by_class
         )
         self.toolbar.pack(side=tk.TOP, fill=tk.X)
 
@@ -193,12 +194,21 @@ class YoloReviewerApp:
             return
 
         self.dataset_dir = folder
-        self.image_paths = image_paths
+        self.original_image_paths = image_paths # Lưu bản gốc
+        self.image_paths = list(image_paths)    # Bản đang hiển thị
         self.current_idx = 0
         
         # Cập nhật danh sách gợi ý tìm kiếm
         basenames = [os.path.basename(p) for p in self.image_paths]
         self.toolbar.update_search_list(basenames)
+
+        # Cập nhật danh sách lớp vào ô Lọc (Filter)
+        class_names = []
+        if hasattr(self, 'class_panel'):
+            # Lấy tên các lớp từ bảng ClassPanel
+            for cls_id, name in sorted(self.class_panel.classes.items()):
+                class_names.append(f"{cls_id}: {name}")
+        self.toolbar.update_filter_classes(class_names)
         
         self.load_image()
 
@@ -253,6 +263,79 @@ class YoloReviewerApp:
         
         # Nếu không tìm thấy chính xác, báo lỗi nhẹ
         self.status_bar.set_text(f"Không tìm thấy ảnh: {target_name}")
+
+    def filter_by_class(self, event=None):
+        """Lọc danh sách ảnh theo lớp được chọn (Xử lý đa luồng để tránh treo UI)."""
+        selected_filter = self.toolbar.get_filter_class_value()
+        
+        if selected_filter == "Tất cả":
+            self.image_paths = list(self.original_image_paths)
+            self.current_idx = 0
+            basenames = [os.path.basename(p) for p in self.image_paths]
+            self.toolbar.update_search_list(basenames)
+            self.load_image()
+            return
+
+        # Tách lấy Class ID
+        try:
+            cls_id = int(selected_filter.split(":")[0])
+        except Exception:
+            return
+
+        # Hiển thị cửa sổ Progress
+        from tkinter import ttk
+        import threading
+
+        progress_win = tk.Toplevel(self.root)
+        progress_win.title("Đang lọc dữ liệu")
+        progress_win.geometry("350x150")
+        progress_win.transient(self.root)
+        progress_win.grab_set()
+
+        tk.Label(progress_win, text=f"Đang tìm ảnh chứa lớp: {selected_filter}", font=("Arial", 10)).pack(pady=10)
+        
+        progress = ttk.Progressbar(progress_win, length=280, mode='determinate')
+        progress.pack(pady=5)
+        progress["maximum"] = len(self.original_image_paths)
+        
+        lbl_count = tk.Label(progress_win, text="Đang quét: 0 / 0")
+        lbl_count.pack()
+
+        def run_filter():
+            mode = self.mode_var.get()
+            filtered_list = []
+            total = len(self.original_image_paths)
+
+            for i, img_path in enumerate(self.original_image_paths):
+                # Cập nhật progress sau mỗi 50 ảnh để tránh spam UI thread
+                if i % 50 == 0 or i == total - 1:
+                    progress_win.after(0, lambda v=i+1: [progress.configure(value=v), lbl_count.configure(text=f"Đang quét: {v} / {total}")])
+
+                txt_path = self.data_manager.get_label_path(img_path, mode)
+                labels = self.data_manager.load_labels(txt_path)
+                
+                if any(label[0] == cls_id for label in labels):
+                    filtered_list.append(img_path)
+
+            # Hoàn tất
+            def on_finish():
+                progress_win.destroy()
+                if not filtered_list:
+                    messagebox.showinfo("Thông báo", f"Không tìm thấy ảnh nào chứa lớp '{selected_filter}'")
+                    self.toolbar.combo_filter_class.set("Tất cả")
+                    self.image_paths = list(self.original_image_paths)
+                else:
+                    self.image_paths = filtered_list
+                
+                self.current_idx = 0
+                basenames = [os.path.basename(p) for p in self.image_paths]
+                self.toolbar.update_search_list(basenames)
+                self.load_image()
+
+            progress_win.after(0, on_finish)
+
+        # Chạy thread
+        threading.Thread(target=run_filter, daemon=True).start()
 
     # ----------------------------------------------------------
     # Đổi tên & Xoá

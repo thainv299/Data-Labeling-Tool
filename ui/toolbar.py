@@ -7,11 +7,10 @@ from tkinter import ttk
 
 class Toolbar(tk.Frame):
     """Thanh công cụ trên cùng chứa chọn chế độ, bộ tải, tìm kiếm và nút lưu."""
-
     def __init__(self, parent, mode_var: tk.StringVar, rename_var: tk.StringVar = None, 
                  on_load_dataset=None, on_save_labels=None, on_search=None, on_rename=None,
                  on_delete=None, on_auto_annotate=None, on_filter_boxes=None, on_clean_labels=None,
-                 on_copy_static=None):
+                 on_copy_static=None, on_filter_class=None):
         super().__init__(parent, pady=5)
 
         self.mode_var = mode_var
@@ -25,6 +24,7 @@ class Toolbar(tk.Frame):
         self._on_filter_boxes = on_filter_boxes
         self._on_clean_labels = on_clean_labels
         self._on_copy_static = on_copy_static
+        self._on_filter_class = on_filter_class
 
         self._build()
 
@@ -109,6 +109,17 @@ class Toolbar(tk.Frame):
             # Cho phép nhấn Enter để tìm
             self.combo_search.bind("<Return>", self._on_search)
 
+        # --- Lọc theo lớp (Filter by Class) ---
+        filter_frame = tk.Frame(self)
+        filter_frame.pack(side=tk.LEFT, padx=10)
+        
+        tk.Label(filter_frame, text="Lọc lớp:", font=("Arial", 10)).pack(side=tk.LEFT)
+        self.combo_filter_class = ttk.Combobox(filter_frame, width=15, state="readonly")
+        self.combo_filter_class.pack(side=tk.LEFT, padx=5)
+        
+        if self._on_filter_class:
+            self.combo_filter_class.bind("<<ComboboxSelected>>", self._on_filter_class)
+
         # --- Đổi tên (Rename) ---
         rename_frame = tk.Frame(self)
         rename_frame.pack(side=tk.LEFT, padx=10)
@@ -166,3 +177,13 @@ class Toolbar(tk.Frame):
     def get_search_value(self) -> str:
         """Lấy giá trị hiện tại người dùng đang nhập/chọn."""
         return self.combo_search.get()
+
+    def update_filter_classes(self, classes: list[str]):
+        """Cập nhật danh sách các lớp để lọc."""
+        self.combo_filter_class['values'] = ["Tất cả"] + classes
+        if not self.combo_filter_class.get():
+            self.combo_filter_class.set("Tất cả")
+
+    def get_filter_class_value(self) -> str:
+        """Lấy giá trị lớp đang được chọn để lọc."""
+        return self.combo_filter_class.get()

@@ -6,6 +6,11 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from ultralytics import YOLO
 
+# Import Logic Modules from scripts
+from scripts.video_annotator import process_batch_video_logic
+from scripts.dataset_annotator import process_image_upgrade_logic, process_image_supplemental_logic, get_label_path_universal
+from scripts.label_validator import validate_and_clean_labels
+
 class AutoAnnotatorApp:
     def __init__(self, root):
         self.root = root
@@ -26,7 +31,7 @@ class AutoAnnotatorApp:
         self.setup_ui()
 
     def setup_ui(self):
-        # --- MODEL SELECTION (Chung cho 2 tính năng) ---
+        # --- MODEL SELECTION ---
         frame_model = tk.LabelFrame(self.root, text="1. Chọn Model YOLO Pre-trained (.pt / .engine)", padx=10, pady=10)
         frame_model.pack(fill="x", padx=10, pady=5)
         tk.Entry(frame_model, textvariable=self.model_path, width=58, state='readonly').pack(side="left", padx=5)
@@ -51,64 +56,70 @@ class AutoAnnotatorApp:
         tk.Button(frame_output, text="Browse", command=self.browse_output).pack(side="left")
 
         self.resize_var = tk.BooleanVar(value=True)
-        tk.Checkbutton(
-            self.tab_video, 
-            text="Tương thích 640px: Tự động resize ảnh để tiết kiệm ổ cứng (Không lệch box)", 
-            variable=self.resize_var, fg="#c0392b", font=("Arial", 9, "bold")
-        ).pack(pady=2)
+        tk.Checkbutton(self.tab_video, text="Tương thích 640px: Tự động resize ảnh", variable=self.resize_var, fg="#c0392b", font=("Arial", 9, "bold")).pack(pady=2)
 
         self.save_background_var = tk.BooleanVar(value=False)
-        tk.Checkbutton(
-            self.tab_video,
-            text="Lưu ảnh Background: Lưu cả frame không có đối tượng (để giảm False Positive khi train)",
-            variable=self.save_background_var, fg="#2980b9", font=("Arial", 9, "bold")
-        ).pack(pady=2)
+        tk.Checkbutton(self.tab_video, text="Lưu ảnh Background (Không có đối tượng)", variable=self.save_background_var, fg="#2980b9", font=("Arial", 9, "bold")).pack(pady=2)
 
         self.btn_start_video = tk.Button(self.tab_video, text="BẮT ĐẦU GÁN NHÃN", font=("Arial", 12, "bold"), bg="#4CAF50", fg="white", command=self.start_processing_video)
         self.btn_start_video.pack(pady=10)
-        
         self.lbl_status_video = tk.Label(self.tab_video, text="Sẵn sàng...", fg="blue")
         self.lbl_status_video.pack()
 
-        # ====== TAB 2: DATASET CÓ SẴN ======
+        # ====== TAB 2: NÂNG CẤP DATASET ======
         self.tab_dataset = tk.Frame(self.notebook)
-        self.notebook.add(self.tab_dataset, text="Nâng cấp Dataset (Thêm nhãn)")
+        self.notebook.add(self.tab_dataset, text="Nâng cấp Dataset")
 
-        frame_ds = tk.LabelFrame(self.tab_dataset, text="Chọn Thư mục Dataset (Chứa images/ và labels/)", padx=10, pady=10)
+        frame_ds = tk.LabelFrame(self.tab_dataset, text="Chọn Thư mục Dataset", padx=10, pady=10)
         frame_ds.pack(fill="x", padx=10, pady=5)
         tk.Entry(frame_ds, textvariable=self.dataset_dir, width=58, state='readonly').pack(side="left", padx=5)
         tk.Button(frame_ds, text="Browse", command=self.browse_dataset).pack(side="left")
 
-        frame_map = tk.LabelFrame(self.tab_dataset, text="Class Mapping (Chuyển đổi Class ID từ Pre-trained sang Dataset của bạn)", padx=10, pady=10)
+        frame_map = tk.LabelFrame(self.tab_dataset, text="Class Mapping", padx=10, pady=10)
         frame_map.pack(fill="x", padx=10, pady=5)
-        tk.Label(frame_map, text="Cú pháp: Bản_Gốc:Đích (Ví dụ COCO truck 7 -> biến thành 6 là 7:6)").pack(anchor="w", pady=(0,5))
         tk.Entry(frame_map, textvariable=self.class_mapping, width=65).pack(side="left", padx=5)
-
-        tk.Label(self.tab_dataset, text="* Hành động này sẽ dò toàn bộ ảnh, nhận diện thêm vật thể, quy chuẩn sang ID do bạn map.\n* Sau đó nó LƯU NỐI TIẾP (Append) vào txt cũ, tuyệt đối không làm mất thẻ biển số hiện có.", justify="left", fg="gray", font=("Arial", 8)).pack(pady=5, padx=10, anchor="w")
 
         self.btn_start_dataset = tk.Button(self.tab_dataset, text="BẮT ĐẦU CẬP NHẬT DATASET", font=("Arial", 12, "bold"), bg="#e67e22", fg="white", command=self.start_processing_dataset)
         self.btn_start_dataset.pack(pady=10)
-        
         self.lbl_status_dataset = tk.Label(self.tab_dataset, text="Sẵn sàng...", fg="blue")
         self.lbl_status_dataset.pack()
 
-        # ====== TAB 3: GÁN NHÃN BỔ SUNG (SUPPLEMENTAL) ======
+        # ====== TAB 3: GÁN NHÃN BỔ SUNG ======
         self.tab_supp = tk.Frame(self.notebook)
-        self.notebook.add(self.tab_supp, text="Gán nhãn bổ sung (Missed Labels)")
+        self.notebook.add(self.tab_supp, text="Gán nhãn bổ sung")
 
-        frame_supp = tk.LabelFrame(self.tab_supp, text="Chọn Thư mục Dataset để vẽ bù nhãn còn thiếu", padx=10, pady=10)
+        frame_supp = tk.LabelFrame(self.tab_supp, text="Chọn Thư mục Dataset vẽ bù nhãn", padx=10, pady=10)
         frame_supp.pack(fill="x", padx=10, pady=5)
         self.supp_dir = tk.StringVar()
         tk.Entry(frame_supp, textvariable=self.supp_dir, width=58, state='readonly').pack(side="left", padx=5)
         tk.Button(frame_supp, text="Browse", command=lambda: self.supp_dir.set(filedialog.askdirectory())).pack(side="left")
 
-        tk.Label(self.tab_supp, text="* Chế độ này dùng cho các lớp: Person, Bicycle, Motorcycle, Car, Bus, Truck.\n* Chỉ thêm nhãn nếu AI phát hiện vật thể ở vùng TRỐNG (IoU với nhãn cũ < 0.3).\n* Tự động áp dụng Mapping: {0:0, 1:1, 2:2, 3:3, 5:5, 7:6}", justify="left", fg="#2c3e50", font=("Arial", 9, "italic")).pack(pady=10, padx=10, anchor="w")
+        self.class_mapping_supp = tk.Entry(self.tab_supp, width=50)
+        self.class_mapping_supp.insert(0, "0:4")
+        self.class_mapping_supp.pack(padx=10, pady=5)
 
         self.btn_start_supp = tk.Button(self.tab_supp, text="BẮT ĐẦU VẼ BÙ NHÃN", font=("Arial", 12, "bold"), bg="#3498db", fg="white", command=self.start_processing_supplemental)
         self.btn_start_supp.pack(pady=10)
-        
         self.lbl_status_supp = tk.Label(self.tab_supp, text="Sẵn sàng...", fg="blue")
         self.lbl_status_supp.pack()
+
+        # ====== TAB 4: AI VALIDATOR ======
+        self.tab_val = tk.Frame(self.notebook)
+        self.notebook.add(self.tab_val, text="AI Validator")
+
+        frame_val = tk.LabelFrame(self.tab_val, text="Dọn dẹp nhãn sai", padx=10, pady=10)
+        frame_val.pack(fill="x", padx=10, pady=5)
+        self.val_dir = tk.StringVar()
+        tk.Entry(frame_val, textvariable=self.val_dir, width=50, state='readonly').pack(side="left", padx=5)
+        tk.Button(frame_val, text="Browse", command=lambda: self.val_dir.set(filedialog.askdirectory())).pack(side="left")
+
+        self.target_cls_val = tk.Entry(frame_val, width=10); self.target_cls_val.insert(0, "4"); self.target_cls_val.pack()
+        self.conf_val = tk.Entry(frame_val, width=10); self.conf_val.insert(0, "0.25"); self.conf_val.pack()
+
+        self.btn_start_val = tk.Button(self.tab_val, text="BẮT ĐẦU DỌN DẸP NHÃN SAI", font=("Arial", 12, "bold"), bg="#e74c3c", fg="white", command=self.start_processing_validator)
+        self.btn_start_val.pack(pady=10)
+        self.lbl_status_val = tk.Label(self.tab_val, text="Sẵn sàng...", fg="blue")
+        self.lbl_status_val.pack()
 
     # --- BROWSER METHODS ---
     def browse_model(self):
@@ -116,10 +127,8 @@ class AutoAnnotatorApp:
         if path: self.model_path.set(path)
 
     def browse_video(self):
-        paths = filedialog.askopenfilenames(filetypes=[("Video Files", "*.mp4 *.avi *.mkv *.mov *.MOV")])
-        if paths: 
-            self.video_paths = list(paths)
-            self.video_display.set(f"Đã chọn {len(self.video_paths)} video")
+        paths = filedialog.askopenfilenames(filetypes=[("Video Files", "*.mp4 *.avi *.mkv *.mov")])
+        if paths: self.video_paths = list(paths); self.video_display.set(f"Đã chọn {len(self.video_paths)} video")
 
     def browse_output(self):
         path = filedialog.askdirectory()
@@ -129,14 +138,11 @@ class AutoAnnotatorApp:
         path = filedialog.askdirectory()
         if path: self.dataset_dir.set(path)
 
-    # ========================================================
-    # TAB 1: XỬ LÝ VIDEO
-    # ========================================================
+    # --- PROCESSING METHODS ---
     def start_processing_video(self):
         if not self.model_path.get() or not self.video_paths or not self.output_dir.get():
             messagebox.showwarning("Thiếu thông tin", "Vui lòng chọn đầy đủ Model, Video và Thư mục lưu!")
             return
-
         self.btn_start_video.config(state="disabled", text="ĐANG XỬ LÝ...")
         threading.Thread(target=self.process_videos, daemon=True).start()
 
@@ -144,362 +150,131 @@ class AutoAnnotatorApp:
         try:
             self.update_status_video("Đang tải mô hình YOLO...")
             model = YOLO(self.model_path.get(), task="detect")
-            
             output_base = self.output_dir.get()
-            images_dir = os.path.join(output_base, "images")
-            labels_dir = os.path.join(output_base, "labels")
-            os.makedirs(images_dir, exist_ok=True)
-            os.makedirs(labels_dir, exist_ok=True)
+            images_dir = os.path.join(output_base, "images"); labels_dir = os.path.join(output_base, "labels")
+            os.makedirs(images_dir, exist_ok=True); os.makedirs(labels_dir, exist_ok=True)
             
-            input_size = 640  # cho engine
-            total_saved_count = 0
-            num_videos = len(self.video_paths)
-
+            total_saved_count = 0; num_videos = len(self.video_paths)
             for idx, video_path in enumerate(self.video_paths):
                 video_name = os.path.splitext(os.path.basename(video_path))[0]
                 cap = cv2.VideoCapture(video_path)
-                if not cap.isOpened():
-                    print(f"Không thể mở video: {video_path}")
-                    continue
-
-                fps = cap.get(cv2.CAP_PROP_FPS)
-                total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-                frames_to_skip = int(fps * 3) 
-                
-                frame_count = 0
-                video_saved_count = 0
-                
-                batch_frames = []
-                batch_metas = []
-                batch_size = 4
+                fps = cap.get(cv2.CAP_PROP_FPS); total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                frames_to_skip = int(fps * 3); frame_count = 0; video_saved_count = 0
+                batch_frames = []; batch_metas = []; batch_size = 4
 
                 while True:
                     ret, frame = cap.read()
                     if not ret:
-                        # Xử lý nốt các frame còn dư trong batch cuối
-                        if batch_frames:
-                            saved_in_batch = self._process_batch_video(model, batch_frames, batch_metas, images_dir, labels_dir)
-                            total_saved_count += saved_in_batch
+                        if batch_frames: total_saved_count += process_batch_video_logic(model, batch_frames, batch_metas, images_dir, labels_dir)
                         break
-
                     if frame_count % frames_to_skip == 0:
                         batch_frames.append(frame.copy())
-                        batch_metas.append({
-                            'frame_count': frame_count,
-                            'video_name': video_name,
-                            'total_frames': total_frames,
-                            'idx': idx,
-                            'num_videos': num_videos
-                        })
-
+                        batch_metas.append({'frame_count': frame_count, 'video_name': video_name})
                     if len(batch_frames) >= batch_size:
-                        saved_in_batch = self._process_batch_video(model, batch_frames, batch_metas, images_dir, labels_dir)
-                        video_saved_count += saved_in_batch
-                        total_saved_count += saved_in_batch
-                        
-                        # Cập nhật UI
-                        progress_percent = int((frame_count / total_frames) * 100)
-                        self.update_status_video(f"Video {idx+1}/{num_videos}: {video_name} | {progress_percent}% | Đã lưu: {video_saved_count}")
-                        
-                        batch_frames = []
-                        batch_metas = []
-
+                        saved = process_batch_video_logic(model, batch_frames, batch_metas, images_dir, labels_dir)
+                        video_saved_count += saved; total_saved_count += saved
+                        self.update_status_video(f"Video {idx+1}/{num_videos}: {video_name} | {int((frame_count/total_frames)*100)}% | Đã lưu: {video_saved_count}")
+                        batch_frames = []; batch_metas = []
                     frame_count += 1
-
                 cap.release()
-
-            self.update_status_video(f"Hoàn thành! Đã lưu phần trích xuất {total_saved_count} ảnh.")
-            messagebox.showinfo("Thành công", f"Xử lý xong {num_videos} video!\nTổng cộng {total_saved_count} ảnh đã được lưu.")
-
+            messagebox.showinfo("Thành công", f"Xử lý xong! Tổng cộng {total_saved_count} ảnh đã được lưu.")
         except Exception as e:
-            error_msg = str(e)
-            self.update_status_video("Lỗi trong quá trình xử lý!")
-            self.root.after(0, lambda: messagebox.showerror("Lỗi", error_msg))
+            self.update_status_video("Lỗi xử lý!"); messagebox.showerror("Lỗi", str(e))
         finally:
-            self.root.after(0, lambda: self.btn_start_video.config(state="normal", text="BẮT ĐẦU GÁN NHÃN") if self.btn_start_video.winfo_exists() else None)
+            self.root.after(0, lambda: self.btn_start_video.config(state="normal", text="BẮT ĐẦU GÁN NHÃN"))
 
-    def _process_batch_video(self, model, frames, metas, images_dir, labels_dir):
-        """Xử lý AI cho một batch frame từ video và lưu kết quả."""
-        saved_count = 0
-        try:
-            # Inference cả batch
-            results = model.predict(frames, imgsz=640, half=True, verbose=False)
-            
-            for i, result in enumerate(results):
-                frame = frames[i]
-                meta = metas[i]
-                has_objects = len(result.boxes) > 0
-                
-                # Lưu nếu có đối tượng, hoặc bật tuỳ chọn lưu background
-                if has_objects or self.save_background_var.get():
-                    base_filename = f"{meta['video_name']}_frame_{meta['frame_count']:06d}"
-                    img_path = os.path.join(images_dir, f"{base_filename}.jpg")
-                    txt_path = os.path.join(labels_dir, f"{base_filename}.txt")
-
-                    # Resize nếu cần
-                    if self.resize_var.get():
-                        h, w = frame.shape[:2]
-                        if max(w, h) > 640:
-                            scale = 640.0 / float(max(w, h))
-                            new_w, new_h = int(w * scale), int(h * scale)
-                            frame_to_save = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
-                        else:
-                            frame_to_save = frame
-                        cv2.imwrite(img_path, frame_to_save)
-                    else:
-                        cv2.imwrite(img_path, frame)
-
-                    if has_objects:
-                        with open(txt_path, 'w') as f:
-                            for box in result.boxes:
-                                cls_id = int(box.cls[0])
-                                x_center, y_center, width, height = [float(x) for x in box.xywhn[0]]
-                                # Lọc box quá lớn (90% frame) trừ Bus(5) và Truck(6)
-                                if (width > 0.9 or height > 0.9) and cls_id not in [5, 6]:
-                                    continue
-                                f.write(f"{cls_id} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
-                    else:
-                        open(txt_path, 'w').close()
-                    
-                    saved_count += 1
-        except Exception as e:
-            print(f"Lỗi xử lý batch video: {e}")
-            
-        return saved_count
-
-
-
-    # ========================================================
-    # TAB 2: XỬ LÝ DATASET CÓ SẴN (APPEND)
-    # ========================================================
     def start_processing_dataset(self):
-        if not self.model_path.get() or not self.dataset_dir.get() or not self.class_mapping.get().strip():
-            messagebox.showwarning("Thiếu thông tin", "Vui lòng chọn đầy đủ Model, Thư mục Dataset và nhập Class Mapping!")
-            return
-
-        # Parse Class Mapping
-        self.mapping_dict = {}
+        # Logic Tab 2
+        mapping_dict = {}
         try:
-            parts = self.class_mapping.get().split(',')
-            for part in parts:
-                if ':' in part:
-                    k, v = part.split(':')
-                    self.mapping_dict[int(k.strip())] = int(v.strip())
-        except Exception:
-            messagebox.showerror("Lỗi Cú Pháp", "Class Mapping sai cú pháp! Hãy nhập theo chuẩn ví dụ: 0:0, 1:1, 7:6")
-            return
+            for part in self.class_mapping.get().split(','):
+                if ':' in part: k, v = part.split(':'); mapping_dict[int(k.strip())] = int(v.strip())
+        except: messagebox.showerror("Lỗi Cú Pháp", "Class Mapping sai!"); return
 
-        self.btn_start_dataset.config(state="disabled", text="ĐANG QUÉT DATASET...")
-        threading.Thread(target=self.process_dataset, daemon=True).start()
+        self.btn_start_dataset.config(state="disabled", text="ĐANG QUÉT..."); threading.Thread(target=self.process_dataset, args=(mapping_dict,), daemon=True).start()
 
-    def process_dataset(self):
+    def process_dataset(self, mapping):
         try:
-            self.update_status_dataset("Đang tải mô hình YOLO...")
-            model = YOLO(self.model_path.get(), task="detect")
+            self.update_status_dataset("Đang tải mô hình..."); model = YOLO(self.model_path.get(), task="detect")
+            ds_dir = self.dataset_dir.get(); image_paths = []
+            for ext in ("*.jpg", "*.jpeg", "*.png"): image_paths.extend(glob.glob(os.path.join(ds_dir, "**", ext), recursive=True))
             
-            ds_dir = self.dataset_dir.get()
-            
-            # Tìm đệ quy toàn bộ ảnh trong máy
-            self.update_status_dataset("Đang quét ảnh trong dataset...")
-            image_paths = []
-            for ext in ("*.jpg", "*.jpeg", "*.png"):
-                image_paths.extend(glob.glob(os.path.join(ds_dir, "**", ext), recursive=True))
-
-            if not image_paths:
-                messagebox.showinfo("Trống", "Không tìm thấy file ảnh nào trong thư mục được chọn!")
-                self.root.after(0, lambda: self.btn_start_dataset.config(state="normal", text="BẮT ĐẦU CẬP NHẬT DATASET"))
-                return
-
-            total_images = len(image_paths)
-            total_added_boxes = 0
-            batch_size = 4  
-
-            # VÒNG LẶP THEO BATCH
+            total_added = 0; total_images = len(image_paths); batch_size = 4
             for i in range(0, total_images, batch_size):
                 batch_paths = image_paths[i : i + batch_size]
-                
-                # Chạy AI cho cả batch (Sử dụng half=True nếu là GPU để tăng tốc)
                 results = model.predict(source=batch_paths, imgsz=640, half=True, verbose=False)
-
                 for j, result in enumerate(results):
-                    img_path = batch_paths[j]
-                    
-                    import pathlib
-                    p = pathlib.Path(img_path)
-                    parts = list(p.parts)
-                    idx = None
-                    for rev_idx in range(len(parts) - 1, -1, -1):
-                        if parts[rev_idx].lower() == "images":
-                            idx = rev_idx
-                            break
-                            
-                    if idx is not None:
-                        parts[idx] = "labels"
-                        label_path = str(pathlib.Path(*parts).with_suffix(".txt"))
-                    else:
-                        label_path = os.path.splitext(img_path)[0] + ".txt"
-
-                    boxes_to_append = []
-                    for box in result.boxes:
-                        original_cls_id = int(box.cls[0])
-                        if original_cls_id in self.mapping_dict:
-                            new_cls_id = self.mapping_dict[original_cls_id]
-                            x_center, y_center, width, height = [float(x) for x in box.xywhn[0]]
-                            # Lọc box quá lớn (90% frame) trừ Bus(5) và Truck(6) 
-                            if (width > 0.9 or height > 0.9) and new_cls_id not in [5, 6]:
-                                continue
-                            boxes_to_append.append(f"{new_cls_id} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
-                    
-                    if boxes_to_append:
-                        os.makedirs(os.path.dirname(label_path), exist_ok=True)
-                        # GHI NỐI TIẾP (a+)
-                        with open(label_path, 'a') as f:
-                            for line_box in boxes_to_append:
-                                f.write(line_box)
-                        total_added_boxes += len(boxes_to_append)
-
-                # Cập nhật UI
-                percent = int((min(i + batch_size, total_images) / total_images) * 100)
-                self.update_status_dataset(f"Tiến độ: {percent}% ({min(i + batch_size, total_images)}/{total_images}) | Đã gán thêm: {total_added_boxes} boxes")
-
-            self.update_status_dataset(f"Hoàn thành! Đã cập nhật xong {total_images} ảnh.")
-            messagebox.showinfo("Thành công", f"Quá trình Auto Annotate Dataset hoàn tất!\nĐã quét {total_images} ảnh.\nĐược bổ sung thêm {total_added_boxes} bounding box mới.")
-
+                    if process_image_upgrade_logic(batch_paths[j], result, mapping, ds_dir): total_added += 1
+                self.update_status_dataset(f"Tiến độ: {int((min(i+batch_size, total_images)/total_images)*100)}% | Đã thêm: {total_added}")
+            messagebox.showinfo("Thành công", f"Đã nâng cấp xong {total_images} ảnh.")
         except Exception as e:
-            error_msg = str(e)
-            self.update_status_dataset("Lỗi trong quá trình xử lý!")
-            self.root.after(0, lambda: messagebox.showerror("Lỗi", error_msg))
+            self.update_status_dataset("Lỗi!"); messagebox.showerror("Lỗi", str(e))
         finally:
-            self.root.after(0, lambda: self.btn_start_dataset.config(state="normal", text="BẮT ĐẦU CẬP NHẬT DATASET") if self.btn_start_dataset.winfo_exists() else None)
+            self.root.after(0, lambda: self.btn_start_dataset.config(state="normal", text="BẮT ĐẦU CẬP NHẬT DATASET"))
 
-    # ========================================================
-    # TAB 3: GÁN NHÃN BỔ SUNG (SUPPLEMENTAL)
-    # ========================================================
     def start_processing_supplemental(self):
-        if not self.model_path.get() or not self.supp_dir.get():
-            messagebox.showwarning("Thiếu thông tin", "Vui lòng chọn đầy đủ Model và Thư mục Dataset!")
-            return
-
-        self.btn_start_supp.config(state="disabled", text="ĐANG XỬ LÝ...")
-        threading.Thread(target=self.process_supplemental, daemon=True).start()
-
-    def _calculate_iou(self, boxA, boxB):
-        # YOLO format: (xc, yc, w, h)
-        ax1, ay1, ax2, ay2 = boxA[0]-boxA[2]/2, boxA[1]-boxA[3]/2, boxA[0]+boxA[2]/2, boxA[1]+boxA[3]/2
-        bx1, by1, bx2, by2 = boxB[0]-boxB[2]/2, boxB[1]-boxB[3]/2, boxB[0]+boxB[2]/2, boxB[1]+boxB[3]/2
-        
-        ix1, iy1, ix2, iy2 = max(ax1, bx1), max(ay1, by1), min(ax2, bx2), min(ay2, by2)
-        iw, ih = max(0, ix2 - ix1), max(0, iy2 - iy1)
-        inter = iw * ih
-        areaA, areaB = boxA[2]*boxA[3], boxB[2]*boxB[3]
-        union = areaA + areaB - inter
-        return inter / union if union > 0 else 0
-
-    def process_supplemental(self):
+        # Logic Tab 3
+        mapping_supp = {}
         try:
-            self.root.after(0, lambda: self.lbl_status_supp.config(text="Đang tải mô hình YOLO..."))
-            model = YOLO(self.model_path.get(), task="detect")
-            ds_dir = self.supp_dir.get()
+            for part in self.class_mapping_supp.get().split(','):
+                if ':' in part: k, v = part.split(':'); mapping_supp[int(k.strip())] = int(v.strip())
+        except: messagebox.showerror("Lỗi", "Mapping sai!"); return
+        self.btn_start_supp.config(state="disabled", text="ĐANG XỬ LÝ..."); threading.Thread(target=self.process_supplemental, args=(mapping_supp,), daemon=True).start()
+
+    def process_supplemental(self, mapping):
+        try:
+            self.update_status_supp("Đang tải mô hình..."); model = YOLO(self.model_path.get(), task="detect")
+            ds_dir = self.supp_dir.get(); image_paths = []
+            for ext in ("*.jpg", "*.jpeg", "*.png"): image_paths.extend(glob.glob(os.path.join(ds_dir, "**", ext), recursive=True))
             
-            # Mapping mặc định
-            mapping = {0:0, 1:1, 2:2, 3:3, 5:5, 7:6}
-            target_classes = [0, 1, 2, 3, 5, 6]
-            
-            image_paths = []
-            for ext in ("*.jpg", "*.jpeg", "*.png"):
-                image_paths.extend(glob.glob(os.path.join(ds_dir, "**", ext), recursive=True))
-
-            if not image_paths:
-                messagebox.showinfo("Trống", "Không tìm thấy file ảnh nào!")
-                return
-
-            total_images = len(image_paths)
-            total_added = 0
-            batch_size = 4
-
-            # VÒNG LẶP THEO BATCH
+            total_added = 0; total_images = len(image_paths); batch_size = 4
             for i in range(0, total_images, batch_size):
                 batch_paths = image_paths[i : i + batch_size]
-                
-                # Chạy AI cho cả batch
                 results = model.predict(source=batch_paths, imgsz=640, half=True, verbose=False)
-
                 for j, result in enumerate(results):
-                    img_path = batch_paths[j]
-
-                    # Xác định label_path
-                    import pathlib
-                    p = pathlib.Path(img_path)
-                    parts = list(p.parts)
-                    idx = None
-                    for rev_idx in range(len(parts) - 1, -1, -1):
-                        if parts[rev_idx].lower() == "images":
-                            idx = rev_idx
-                            break
-                    if idx is not None:
-                        parts[idx] = "labels"
-                        label_path = str(pathlib.Path(*parts).with_suffix(".txt"))
-                    else:
-                        label_path = os.path.splitext(img_path)[0] + ".txt"
-
-                    # Đọc nhãn cũ
-                    existing_boxes = []
-                    if os.path.exists(label_path):
-                        with open(label_path, 'r') as f:
-                            for line in f:
-                                parts_split = line.strip().split()
-                                if len(parts_split) == 5:
-                                    existing_boxes.append([int(parts_split[0])] + [float(x) for x in parts_split[1:]])
-
-                    boxes_to_add = []
-                    for res_box in result.boxes:
-                        cls_ori = int(res_box.cls[0])
-                        if cls_ori in mapping:
-                            new_cls = mapping[cls_ori]
-                            bn = [float(x) for x in res_box.xywhn[0]] # [xc, yc, w, h]
-                            
-                            # Kiểm tra trùng lặp bằng IoU
-                            is_duplicate = False
-                            for eb in existing_boxes:
-                                if eb[0] == new_cls:
-                                    if self._calculate_iou(bn, eb[1:]) > 0.3:
-                                        is_duplicate = True
-                                        break
-                            
-                            if not is_duplicate:
-                                boxes_to_add.append(f"{new_cls} {bn[0]:.6f} {bn[1]:.6f} {bn[2]:.6f} {bn[3]:.6f}\n")
-                    
-                    if boxes_to_add:
-                        os.makedirs(os.path.dirname(label_path), exist_ok=True)
-                        with open(label_path, 'a') as f:
-                            for line in boxes_to_add:
-                                f.write(line)
-                        total_added += len(boxes_to_add)
-
-                # Cập nhật UI
-                percent = int((min(i + batch_size, total_images) / total_images) * 100)
-                self.update_status_supp(f"Tiến độ: {percent}% ({min(i + batch_size, total_images)}/{total_images}) | Đã vẽ bù: {total_added} boxes")
-
-            self.root.after(0, lambda tot=total_images, add=total_added: 
-                messagebox.showinfo("Hoàn thành", f"Đã quét xong {tot} ảnh.\nĐã vẽ bù thêm {add} nhãn còn thiếu."))
+                    total_added += process_image_supplemental_logic(batch_paths[j], result, mapping, ds_dir)
+                self.update_status_supp(f"Tiến độ: {int((min(i+batch_size, total_images)/total_images)*100)}% | Đã vẽ bù: {total_added}")
+            messagebox.showinfo("Thành công", f"Đã vẽ bù thêm {total_added} nhãn mới.")
         except Exception as e:
-            self.root.after(0, lambda msg=str(e): messagebox.showerror("Lỗi", msg))
+            self.update_status_supp("Lỗi!"); messagebox.showerror("Lỗi", str(e))
         finally:
             self.root.after(0, lambda: self.btn_start_supp.config(state="normal", text="BẮT ĐẦU VẼ BÙ NHÃN"))
 
-    def update_status_dataset(self, text):
-        if self.lbl_status_dataset.winfo_exists():
-            self.root.after(0, lambda: self.lbl_status_dataset.config(text=text))
+    def start_processing_validator(self):
+        # Logic Tab 4
+        try: target_cls = int(self.target_cls_val.get()); min_conf = float(self.conf_val.get())
+        except: messagebox.showerror("Lỗi", "ID/Conf sai!"); return
+        if not messagebox.askyesno("Xác nhận", "Xoá nhãn sai?"): return
+        self.btn_start_val.config(state="disabled", text="ĐANG QUÉT..."); threading.Thread(target=self.process_validator, args=(target_cls, min_conf), daemon=True).start()
 
-    def update_status_video(self, text):
-        if self.lbl_status_video.winfo_exists():
-            self.root.after(0, lambda: self.lbl_status_video.config(text=text))
+    def process_validator(self, target_cls, min_conf):
+        try:
+            self.update_status_val("Đang tải mô hình..."); model = YOLO(self.model_path.get(), task="detect")
+            ds_dir = self.val_dir.get(); image_paths = []
+            for ext in ("*.jpg", "*.jpeg", "*.png"): image_paths.extend(glob.glob(os.path.join(ds_dir, "**", ext), recursive=True))
+            
+            total = len(image_paths); cleaned_count = 0; removed_labels_count = 0
+            for i, img_path in enumerate(image_paths):
+                if i % 10 == 0 or i == total - 1: self.update_status_val(f"Quét: {i+1}/{total} | Đã xoá: {removed_labels_count}")
+                results = model.predict(img_path, imgsz=640, conf=min_conf, verbose=False)
+                txt_path = get_label_path_universal(img_path, ds_dir)
+                removed = validate_and_clean_labels(txt_path, results[0].boxes if results else [], target_cls, min_conf)
+                if removed > 0: removed_labels_count += removed; cleaned_count += 1
+            messagebox.showinfo("Thành công", f"Xoá xong {removed_labels_count} nhãn sai trên {cleaned_count} ảnh.")
+        except Exception as e:
+            self.update_status_val("Lỗi!"); messagebox.showerror("Lỗi", str(e))
+        finally:
+            self.root.after(0, lambda: self.btn_start_val.config(state="normal", text="BẮT ĐẦU DỌN DẸP NHÃN SAI"))
 
-    def update_status_supp(self, text):
-        if self.lbl_status_supp.winfo_exists():
-            self.root.after(0, lambda: self.lbl_status_supp.config(text=text))
+    # --- STATUS UPDATES ---
+    def update_status_dataset(self, text): 
+        if self.lbl_status_dataset.winfo_exists(): self.root.after(0, lambda: self.lbl_status_dataset.config(text=text))
+    def update_status_video(self, text): 
+        if self.lbl_status_video.winfo_exists(): self.root.after(0, lambda: self.lbl_status_video.config(text=text))
+    def update_status_supp(self, text): 
+        if self.lbl_status_supp.winfo_exists(): self.root.after(0, lambda: self.lbl_status_supp.config(text=text))
+    def update_status_val(self, text): 
+        if self.lbl_status_val.winfo_exists(): self.root.after(0, lambda: self.lbl_status_val.config(text=text))
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    app = AutoAnnotatorApp(root)
-    root.mainloop()
+    root = tk.Tk(); app = AutoAnnotatorApp(root); root.mainloop()

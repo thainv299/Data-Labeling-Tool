@@ -94,9 +94,17 @@ class AutoAnnotatorApp:
         tk.Entry(frame_supp, textvariable=self.supp_dir, width=58, state='readonly').pack(side="left", padx=5)
         tk.Button(frame_supp, text="Browse", command=lambda: self.supp_dir.set(filedialog.askdirectory())).pack(side="left")
 
+        tk.Label(self.tab_supp, text="Class Mapping (Model:Dataset):").pack(anchor="w", padx=10)
         self.class_mapping_supp = tk.Entry(self.tab_supp, width=50)
         self.class_mapping_supp.insert(0, "0:4")
         self.class_mapping_supp.pack(padx=10, pady=5)
+
+        tk.Label(self.tab_supp, text="Ngưỡng Confidence (VD: 0.2):").pack(anchor="w", padx=10)
+        self.conf_supp = tk.Entry(self.tab_supp, width=15)
+        self.conf_supp.insert(0, "0.25")
+        self.conf_supp.pack(padx=10, pady=2)
+
+        tk.Label(self.tab_supp, text="Ví dụ: 0:4 (Lớp 0 của AI sẽ lưu thành 4 trong nhãn)", font=("Arial", 8, "italic"), fg="gray").pack(anchor="w", padx=10)
 
         self.btn_start_supp = tk.Button(self.tab_supp, text="BẮT ĐẦU VẼ BÙ NHÃN", font=("Arial", 12, "bold"), bg="#3498db", fg="white", command=self.start_processing_supplemental)
         self.btn_start_supp.pack(pady=10)
@@ -165,13 +173,22 @@ class AutoAnnotatorApp:
                 while True:
                     ret, frame = cap.read()
                     if not ret:
-                        if batch_frames: total_saved_count += process_batch_video_logic(model, batch_frames, batch_metas, images_dir, labels_dir)
+                        if batch_frames:
+                            total_saved_count += process_batch_video_logic(
+                                model, batch_frames, batch_metas, images_dir, labels_dir,
+                                resize=self.resize_var.get(),
+                                save_background=self.save_background_var.get()
+                            )
                         break
                     if frame_count % frames_to_skip == 0:
                         batch_frames.append(frame.copy())
                         batch_metas.append({'frame_count': frame_count, 'video_name': video_name})
                     if len(batch_frames) >= batch_size:
-                        saved = process_batch_video_logic(model, batch_frames, batch_metas, images_dir, labels_dir)
+                        saved = process_batch_video_logic(
+                            model, batch_frames, batch_metas, images_dir, labels_dir,
+                            resize=self.resize_var.get(),
+                            save_background=self.save_background_var.get()
+                        )
                         video_saved_count += saved; total_saved_count += saved
                         self.update_status_video(f"Video {idx+1}/{num_videos}: {video_name} | {int((frame_count/total_frames)*100)}% | Đã lưu: {video_saved_count}")
                         batch_frames = []; batch_metas = []
@@ -216,12 +233,15 @@ class AutoAnnotatorApp:
         # Logic Tab 3
         mapping_supp = {}
         try:
+            conf_val = float(self.conf_supp.get())
             for part in self.class_mapping_supp.get().split(','):
                 if ':' in part: k, v = part.split(':'); mapping_supp[int(k.strip())] = int(v.strip())
-        except: messagebox.showerror("Lỗi", "Mapping sai!"); return
-        self.btn_start_supp.config(state="disabled", text="ĐANG XỬ LÝ..."); threading.Thread(target=self.process_supplemental, args=(mapping_supp,), daemon=True).start()
+        except: messagebox.showerror("Lỗi", "Mapping hoặc Confidence sai!"); return
+        
+        self.btn_start_supp.config(state="disabled", text="ĐANG XỬ LÝ..."); 
+        threading.Thread(target=self.process_supplemental, args=(mapping_supp, conf_val), daemon=True).start()
 
-    def process_supplemental(self, mapping):
+    def process_supplemental(self, mapping, conf_val):
         try:
             self.update_status_supp("Đang tải mô hình..."); model = YOLO(self.model_path.get(), task="detect")
             ds_dir = self.supp_dir.get(); image_paths = []
@@ -230,7 +250,7 @@ class AutoAnnotatorApp:
             total_added = 0; total_images = len(image_paths); batch_size = 4
             for i in range(0, total_images, batch_size):
                 batch_paths = image_paths[i : i + batch_size]
-                results = model.predict(source=batch_paths, imgsz=640, half=True, verbose=False)
+                results = model.predict(source=batch_paths, imgsz=640, conf=conf_val, half=True, verbose=False)
                 for j, result in enumerate(results):
                     total_added += process_image_supplemental_logic(batch_paths[j], result, mapping, ds_dir)
                 self.update_status_supp(f"Tiến độ: {int((min(i+batch_size, total_images)/total_images)*100)}% | Đã vẽ bù: {total_added}")

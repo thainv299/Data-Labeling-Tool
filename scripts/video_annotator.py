@@ -1,38 +1,55 @@
 import os
 import cv2
-from ultralytics import YOLO
 
-def process_batch_video_logic(model, frames, metas, images_dir, labels_dir):
+def process_batch_video_logic(model, frames, metas, images_dir, labels_dir, resize=True, save_background=False):
     """
-    Logic xử lý AI cho một batch frame từ video và lưu kết quả.
-    Tách biệt hoàn toàn khỏi UI.
+    Logic xử lý AI cho một batch frame từ video.
+    Duyệt qua TOÀN BỘ batch và lưu từng ảnh/nhãn theo cấu hình.
     """
     saved_count = 0
-    # Inference cả batch
+    # Inference cả batch để tối ưu tốc độ (TensorRT/GPU)
     results = model.predict(frames, imgsz=640, half=True, verbose=False)
     
+    # Duyệt qua từng kết quả trong batch (ví dụ duyệt đủ 4 kết quả nếu batch=4)
     for i, result in enumerate(results):
         frame = frames[i]
         meta = metas[i]
+        has_objects = len(result.boxes) > 0
         
-        # Chỉ lưu nếu phát hiện vật thể
-        if len(result.boxes) > 0:
+        # Quyết định lưu: Có vật thể HOẶC người dùng muốn lưu cả ảnh trống (Background)
+        if has_objects or save_background:
             video_name = meta['video_name']
             frame_count = meta['frame_count']
+            base_filename = f"{video_name}_frame_{frame_count:06d}"
             
-            file_name = f"{video_name}_frame_{frame_count:06d}.jpg"
-            img_path = os.path.join(images_dir, file_name)
-            cv2.imwrite(img_path, frame)
-            
-            # Lưu file nhãn YOLO
-            txt_name = f"{video_name}_frame_{frame_count:06d}.txt"
-            txt_path = os.path.join(labels_dir, txt_name)
-            
-            with open(txt_path, "w") as f:
-                for box in result.boxes:
-                    cls = int(box.cls[0])
-                    xywh = box.xywhn[0].tolist() # [x, y, w, h] chuẩn hoá
-                    f.write(f"{cls} {' '.join(map(str, xywh))}\n")
+            img_path = os.path.join(images_dir, f"{base_filename}.jpg")
+            txt_path = os.path.join(labels_dir, f"{base_filename}.txt")
+
+            # 1. Xử lý Resize ảnh (nếu được bật)
+            if resize:
+                h, w = frame.shape[:2]
+                if max(w, h) > 640:
+                    scale = 640.0 / float(max(w, h))
+                    new_w, new_h = int(w * scale), int(h * scale)
+                    frame_to_save = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
+                else:
+                    frame_to_save = frame
+                cv2.imwrite(img_path, frame_to_save)
+            else:
+                cv2.imwrite(img_path, frame)
+
+            # 2. Xử lý ghi nhãn YOLO
+            if has_objects:
+                with open(txt_path, "w") as f:
+                    for box in result.boxes:
+                        cls_id = int(box.cls[0])
+                        # Lấy tọa độ chuẩn hóa [x_center, y_center, width, height]
+                        x_center, y_center, width, height = box.xywhn[0].tolist()
+                        
+                        f.write(f"{cls_id} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
+            else:
+                # Nếu lưu background (không có vật thể) thì tạo file txt rỗng
+                open(txt_path, 'w').close()
             
             saved_count += 1
             

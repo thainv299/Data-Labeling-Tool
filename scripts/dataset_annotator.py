@@ -73,11 +73,11 @@ def process_image_supplemental_logic(img_path, result, mapping, ds_dir):
             new_cls = mapping[cls_ori]
             bn = [float(x) for x in res_box.xywhn[0]] # [xc, yc, w, h]
             
-            # Chỉ thêm nếu chưa có nhãn nào tại đó (IoU < 0.3)
+            # Chỉ thêm nếu chưa có nhãn nào tại đó (IoU < 0.45)
             is_new = True
             for eb in existing_boxes:
                 if eb[0] == new_cls:
-                    if calculate_iou(bn, eb[1:]) > 0.3:
+                    if calculate_iou(bn, eb[1:]) > 0.45:
                         is_new = False
                         break
             

@@ -21,6 +21,7 @@ from scripts.cleanup_dataset import cleanup_unmatched
 from scripts.filter_large_boxes import filter_outlier_boxes
 from scripts.batch_delete_class import BatchDeleteClassApp
 from scripts.static_object_labeler import StaticObjectLabelerApp
+from scripts.check_and_resize import check_and_resize_dataset
 
 
 class YoloReviewerApp:
@@ -69,6 +70,8 @@ class YoloReviewerApp:
         tools_menu.add_separator()
         tools_menu.add_command(label="Xoá Class hàng loạt (theo dải ảnh)", command=self.launch_batch_delete_class)
         tools_menu.add_command(label="Lọc Box 'Nhầm' (Diện tích TB)", command=self.launch_filter_large_boxes)
+        tools_menu.add_separator()
+        tools_menu.add_command(label="Kiểm tra & Sửa kích thước ảnh (>640px)", command=check_and_resize_dataset)
 
     # ----------------------------------------------------------
     # Khởi tạo giao diện
@@ -131,6 +134,8 @@ class YoloReviewerApp:
         self.root.bind("a", lambda e: self.prev_image())
         self.root.bind("d", lambda e: self.next_image())
         self.root.bind("<Return>", lambda e: self.canvas_panel.confirm_draft())
+        self.root.bind("<Shift_L>", lambda e: self.canvas_panel.confirm_draft())
+        self.root.bind("<Shift_R>", lambda e: self.canvas_panel.confirm_draft())
         self.root.bind("<Control-z>", lambda e: self.canvas_panel.undo_label())
         self.root.bind("<Control-s>", lambda e: self.save_labels())
         self.root.bind("<Control-b>", lambda e: self.launch_static_object_labeler())

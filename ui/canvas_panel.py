@@ -10,13 +10,15 @@ from core.config import CLASSES, COLORS
 class CanvasPanel(tk.Frame):
     """Bảng trung tâm chứa ◀ prev | Canvas | ▶ next và toàn bộ logic vẽ khung nhãn."""
 
-    def __init__(self, parent, selected_class: tk.IntVar, on_prev=None, on_next=None, on_label_selected=None):
+    def __init__(self, parent, selected_class: tk.IntVar, on_prev=None, on_next=None, on_label_selected=None, on_mouse_move=None, app=None):
         super().__init__(parent, bg="#2c3e50")
 
+        self.app = app
         self.selected_class = selected_class
         self._on_prev = on_prev
         self._on_next = on_next
         self._on_label_selected = on_label_selected
+        self._on_mouse_move = on_mouse_move
         self.class_panel = None # Sẽ được gán từ app.py
         
         # Trạng thái hiển thị & Zoom
@@ -97,6 +99,7 @@ class CanvasPanel(tk.Frame):
         # Panning (Chuột giữa)
         self.canvas.bind("<ButtonPress-2>", self._on_pan_start)
         self.canvas.bind("<B2-Motion>", self._on_pan_drag)
+        self.canvas.bind("<Motion>", self._handle_mouse_motion)
         
         # Zoom (Ctrl + Wheel) - Gắn ở App.py thực chất tốt hơn để bắt toàn cục,
         # nhưng bind ở canvas cũng được nếu nó có focus.
@@ -198,6 +201,11 @@ class CanvasPanel(tk.Frame):
     def get_labels(self) -> list[tuple]:
         return list(self.current_labels)
 
+    def clear_temp_point(self):
+        """Xóa điểm đánh dấu đỏ tạm thời."""
+        if hasattr(self, 'temp_point_id'):
+            self.canvas.delete("temp_point")
+
     def draw_all_labels(self):
         self.canvas.delete("label_box")
 
@@ -262,8 +270,46 @@ class CanvasPanel(tk.Frame):
     # ----------------------------------------------------------
     # Sự kiện chuột
     # ----------------------------------------------------------
+    def _handle_mouse_motion(self, event):
+        if self._on_mouse_move and self.original_image:
+            # Tọa độ thực trên canvas (có tính đến scroll)
+            canvas_x = self.canvas.canvasx(event.x)
+            canvas_y = self.canvas.canvasy(event.y)
+            
+            # Tọa độ tương đối trên ảnh hiển thị (ảnh luôn ở 0,0 trên canvas)
+            rel_x = canvas_x / self.img_w_disp
+            rel_y = canvas_y / self.img_h_disp
+            
+            # Giới hạn trong khoảng [0, 1]
+            rel_x = max(0.0, min(1.0, rel_x))
+            rel_y = max(0.0, min(1.0, rel_y))
+            
+            self._on_mouse_move(rel_x, rel_y)
+
     def _on_mouse_down(self, event):
         self.canvas.focus_set()
+
+        # Nếu đang ở chế độ chọn điểm xóa nhãn tĩnh
+        if self.app and hasattr(self.app, 'selecting_static_point') and self.app.selecting_static_point:
+            canvas_x = self.canvas.canvasx(event.x)
+            canvas_y = self.canvas.canvasy(event.y)
+            
+            # Tính tọa độ chuẩn hóa
+            rel_x = canvas_x / self.img_w_disp
+            rel_y = canvas_y / self.img_h_disp
+            rel_x = max(0.0, min(1.0, rel_x))
+            rel_y = max(0.0, min(1.0, rel_y))
+            
+            # Vẽ điểm đánh dấu tạm thời
+            self.clear_temp_point()
+            self.temp_point_id = self.canvas.create_oval(
+                canvas_x-5, canvas_y-5, canvas_x+5, canvas_y+5,
+                fill="red", outline="white", width=2, tags="temp_point"
+            )
+            
+            # Gọi callback về app.py
+            self.app.handle_static_point_selected(rel_x, rel_y)
+            return
         
         # Toạ độ thực tế trên Canvas (đã tính scroll)
         cx = self.canvas.canvasx(event.x)

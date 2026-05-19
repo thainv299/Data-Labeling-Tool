@@ -78,19 +78,25 @@ def change_label_id(folder_path, old_id=0, new_id=4):
                 lbl_status.config(text=f"{i + 1} / {len(txt_files)}")
                 progress_win.update()
                 
+        # Đảm bảo hiển thị đầy đủ 100%
+        progress["value"] = len(txt_files)
+        lbl_status.config(text=f"{len(txt_files)} / {len(txt_files)}")
+        progress_win.update()
+
+        messagebox.showinfo(
+            "Thành công", 
+            f"Hoàn tất dọn dẹp ID trên dataset!\n\n"
+            f"- Tổng file đã quét: {len(txt_files)}\n"
+            f"- Tổng file có chứa biển số cần đổi: {modified_files}\n"
+            f"- Số nhãn (box) đã được chuyển sang id {new_id}: {total_modified_lines} nhãn.",
+            parent=progress_win
+        )
+
     except Exception as e:
         messagebox.showerror("Lỗi", f"Có lỗi xảy ra trong quá trình sửa file: {e}")
     finally:
         if progress_win.winfo_exists():
             progress_win.destroy()
-
-    messagebox.showinfo(
-        "Thành công", 
-        f"Hoàn tất dọn dẹp ID trên dataset!\n\n"
-        f"- Tổng file đã quét: {len(txt_files)}\n"
-        f"- Tổng file có chứa biển số cần đổi: {modified_files}\n"
-        f"- Số nhãn (box) đã được chuyển sang id {new_id}: {total_modified_lines} nhãn."
-    )
 
 if __name__ == "__main__":
     root = tk.Tk()

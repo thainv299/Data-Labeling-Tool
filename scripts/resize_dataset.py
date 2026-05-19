@@ -67,19 +67,24 @@ def resize_images(folder_path, max_size=640):
                     new_size = os.path.getsize(img_path)
                     saved_size += (original_size - new_size)
 
-            # Cập nhật progress
             if i % 10 == 0 or i == len(image_paths) - 1:
                 progress["value"] = i + 1
                 lbl_status.config(text=f"{i + 1} / {len(image_paths)}")
                 progress_win.update()
 
+        # Đảm bảo hiển thị đầy đủ 100%
+        progress["value"] = len(image_paths)
+        lbl_status.config(text=f"{len(image_paths)} / {len(image_paths)}")
+        progress_win.update()
+
+        saved_mb = saved_size / (1024 * 1024)
+        messagebox.showinfo("Hoàn tất", f"Đã resize thành công {processed_count} bức ảnh.\nTiết kiệm được khoảng {saved_mb:.2f} MB dung lượng.", parent=progress_win)
+
     except Exception as e:
         messagebox.showerror("Lỗi", f"Có lỗi xảy ra: {e}")
     finally:
-        progress_win.destroy()
-
-    saved_mb = saved_size / (1024 * 1024)
-    messagebox.showinfo("Hoàn tất", f"Đã resize thành công {processed_count} bức ảnh.\nTiết kiệm được khoảng {saved_mb:.2f} MB dung lượng.")
+        if progress_win.winfo_exists():
+            progress_win.destroy()
 
 
 def main():

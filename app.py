@@ -22,6 +22,7 @@ from scripts.filter_large_boxes import filter_outlier_boxes
 from scripts.batch_delete_class import BatchDeleteClassApp
 from scripts.static_object_labeler import StaticObjectLabelerApp
 from scripts.check_and_resize import check_and_resize_dataset
+from scripts.delete_static_fakes import delete_labels_at_point
 
 
 class YoloReviewerApp:
@@ -41,6 +42,7 @@ class YoloReviewerApp:
         self.mode_var = tk.StringVar(value="same_folder")
         self.rename_var = tk.StringVar()
         self.selected_class = tk.IntVar(value=0)
+        self.selecting_static_point = False
 
         # --- Lớp dữ liệu ---
         self.data_manager = DataManager()
@@ -72,6 +74,7 @@ class YoloReviewerApp:
         tools_menu.add_command(label="Lọc Box 'Nhầm' (Diện tích TB)", command=self.launch_filter_large_boxes)
         tools_menu.add_separator()
         tools_menu.add_command(label="Kiểm tra & Sửa kích thước ảnh (>640px)", command=check_and_resize_dataset)
+        tools_menu.add_command(label="Xoá nhãn 'Tĩnh' tại toạ độ (Fake Positives)", command=self.enter_static_point_selection_mode)
 
     # ----------------------------------------------------------
     # Khởi tạo giao diện
@@ -91,7 +94,8 @@ class YoloReviewerApp:
             on_filter_boxes=self.filter_duplicate_boxes,
             on_clean_labels=self.clean_orphan_labels_action,
             on_copy_static=self.launch_static_object_labeler,
-            on_filter_class=self.filter_by_class
+            on_filter_class=self.filter_by_class,
+            on_jump=self.jump_to_index
         )
         self.toolbar.pack(side=tk.TOP, fill=tk.X)
 
@@ -119,7 +123,9 @@ class YoloReviewerApp:
             selected_class=self.selected_class,
             on_prev=self.prev_image,
             on_next=self.next_image,
-            on_label_selected=self.on_label_selected
+            on_label_selected=self.on_label_selected,
+            on_mouse_move=self.on_mouse_move_handler,
+            app=self
         )
         self.canvas_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.canvas_panel.set_class_panel(self.class_panel)
@@ -136,7 +142,7 @@ class YoloReviewerApp:
         self.root.bind("<Return>", lambda e: self.canvas_panel.confirm_draft())
         self.root.bind("<Shift_L>", lambda e: self.canvas_panel.confirm_draft())
         self.root.bind("<Shift_R>", lambda e: self.canvas_panel.confirm_draft())
-        self.root.bind("<Control-z>", lambda e: self.canvas_panel.undo_label())
+        self.root.bind("<Control-z>", self.on_ctrl_z)
         self.root.bind("<Control-s>", lambda e: self.save_labels())
         self.root.bind("<Control-b>", lambda e: self.launch_static_object_labeler())
         self.root.bind("<Control-r>", lambda e: self.toolbar.entry_rename.focus_set())
@@ -172,8 +178,9 @@ class YoloReviewerApp:
     # ----------------------------------------------------------
     # Tải tập dữ liệu
     # ----------------------------------------------------------
-    def load_dataset(self):
-        folder = filedialog.askdirectory()
+    def load_dataset(self, folder=None):
+        if not folder:
+            folder = filedialog.askdirectory()
         if not folder:
             return
 
@@ -228,7 +235,7 @@ class YoloReviewerApp:
         file_name = os.path.basename(img_path)
         
         # Cập nhật thanh công cụ
-        self.toolbar.set_info(f"Ảnh {self.current_idx + 1}/{len(self.image_paths)}: {file_name}")
+        self.toolbar.set_index_info(self.current_idx, len(self.image_paths))
         self.toolbar.set_search_value(file_name)
         
         # Cập nhật ô đổi tên (không lấy phần mở rộng)
@@ -433,6 +440,95 @@ class YoloReviewerApp:
         """Khi một nhãn được chọn trên Canvas, cập nhật radio button tương ứng."""
         self.selected_class.set(cls_id)
 
+    def jump_to_index(self, index_str):
+        """Nhảy đến ảnh theo số thứ tự người dùng nhập."""
+        try:
+            val = int(index_str)
+            target_idx = val - 1
+            if 0 <= target_idx < len(self.image_paths):
+                self.current_idx = target_idx
+                self.show_current_image()
+            else:
+                messagebox.showwarning("Lỗi", f"Số thứ tự phải từ 1 đến {len(self.image_paths)}")
+                self.toolbar.set_index_info(self.current_idx, len(self.image_paths))
+        except ValueError:
+            self.toolbar.set_index_info(self.current_idx, len(self.image_paths))
+
+    def on_mouse_move_handler(self, x, y):
+        """Cập nhật tọa độ chuột lên thanh trạng thái."""
+        self.status_bar.set_coords(x, y)
+
+    def jump_to_index(self, index_str):
+        """Nhảy đến ảnh theo số thứ tự người dùng nhập."""
+        try:
+            val = int(index_str)
+            target_idx = val - 1
+            if 0 <= target_idx < len(self.image_paths):
+                self.current_idx = target_idx
+                self.load_image()
+            else:
+                messagebox.showwarning("Lỗi", f"Số thứ tự phải từ 1 đến {len(self.image_paths)}")
+                self.toolbar.set_index_info(self.current_idx, len(self.image_paths))
+        except ValueError:
+            self.toolbar.set_index_info(self.current_idx, len(self.image_paths))
+
+    def enter_static_point_selection_mode(self):
+        """Kích hoạt chế độ chọn điểm để xóa nhãn tĩnh."""
+        if not self.dataset_dir:
+            messagebox.showwarning("Cảnh báo", "Vui lòng mở Dataset trước!")
+            return
+        
+        self.selecting_static_point = True
+        self.status_bar.set_text("CHẾ ĐỘ CHỌN ĐIỂM: Hãy CLICK vào điểm nhiễu trên ảnh. (CTRL-Z để hủy)")
+        messagebox.showinfo("Chế độ chọn điểm", "Hãy Click chuột trái vào vị trí nhãn nhiễu trên ảnh để lấy tọa độ.")
+
+    def on_ctrl_z(self, event=None):
+        """Xử lý phím Ctrl-Z: Hoàn tác vẽ hoặc Hủy chọn điểm tĩnh."""
+        if hasattr(self, 'selecting_static_point') and self.selecting_static_point:
+            self.selecting_static_point = False
+            self.canvas_panel.clear_temp_point()
+            self.status_bar.set_text("Đã hủy chế độ chọn điểm.")
+        else:
+            self.canvas_panel.undo_label()
+
+    def handle_static_point_selected(self, x, y):
+        """Xử lý sau khi người dùng click chọn điểm trên Canvas."""
+        self.selecting_static_point = False
+        self.status_bar.set_text(f"Đã chọn điểm: X:{x:.3f} Y:{y:.3f}")
+        
+        # 1. Hỏi Class ID
+        target_cls = simpledialog.askinteger("Xác nhận", f"Đã chọn tọa độ ({x:.3f}, {y:.3f})\nNhập Class ID muốn xóa:", initialvalue=4)
+        if target_cls is None:
+            self.canvas_panel.clear_temp_point()
+            return
+
+        # 2. Hỏi phạm vi ảnh
+        start_num = simpledialog.askinteger("Phạm vi", "Bắt đầu từ ảnh số (1-indexed):", 
+                                            initialvalue=self.current_idx + 1)
+        if start_num is None: 
+            self.canvas_panel.clear_temp_point()
+            return
+        
+        end_num = simpledialog.askinteger("Phạm vi", "Kết thúc tại ảnh số (1-indexed):", 
+                                          initialvalue=len(self.image_paths))
+        if end_num is None: 
+            self.canvas_panel.clear_temp_point()
+            return
+
+        # Chuyển về 0-indexed
+        start_idx = max(0, start_num - 1)
+        end_idx = min(len(self.image_paths) - 1, end_num - 1)
+
+        # 3. Xác nhận và thực hiện
+        confirm = messagebox.askyesno("Xác nhận xóa", f"Bạn có chắc muốn xóa nhãn Class {target_cls} tại điểm này\n"
+                                                       f"từ ảnh {start_num} đến {end_num}?")
+        if confirm:
+            from scripts.delete_static_fakes import delete_labels_at_point_logic
+            delete_labels_at_point_logic(self.dataset_dir, target_cls, x, y, start_idx, end_idx)
+        
+        self.canvas_panel.clear_temp_point()
+        self.load_image()
+
     def on_class_radio_changed(self, *args):
         """Khi người dùng chọn một lớp mới ở bảng bên trái."""
         new_cls_id = self.selected_class.get()
@@ -543,20 +639,26 @@ class YoloReviewerApp:
                     lbl_status.config(text=f"{i + 1} / {total_images}")
                     progress_win.update()
 
+            # Đảm bảo hiển thị đầy đủ 100%
+            progress["value"] = total_images
+            lbl_status.config(text=f"{total_images} / {total_images}")
+            progress_win.update()
+
+            self.load_image()
+            
+            messagebox.showinfo(
+                "Hoàn tất", 
+                f"Đã dọn dẹp bộ dữ liệu.\n"
+                f"- Số ảnh phát hiện trùng lặp: {processed_images}\n"
+                f"- Tổng số bounding box đã bị xoá: {removed_boxes}",
+                parent=progress_win
+            )
+
         except Exception as e:
             messagebox.showerror("Lỗi", f"Đã xảy ra lỗi trong quá trình quét:\n{str(e)}")
         finally:
             if progress_win.winfo_exists():
                 progress_win.destroy()
-
-        self.load_image()
-        
-        messagebox.showinfo(
-            "Hoàn tất", 
-            f"Đã dọn dẹp bộ dữ liệu.\n"
-            f"- Số ảnh phát hiện trùng lặp: {processed_images}\n"
-            f"- Tổng số bounding box đã bị xoá: {removed_boxes}"
-        )
 
     # ----------------------------------------------------------
     # Dọn dẹp nhãn

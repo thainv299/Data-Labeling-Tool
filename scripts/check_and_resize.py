@@ -73,6 +73,7 @@ def check_and_resize_dataset():
                 if messagebox.askyesno("Phát hiện ảnh lớn", msg):
                     lbl_status.configure(text="Đang thực hiện Resize...")
                     progress.configure(value=0, maximum=len(oversized_images))
+                    root.update()
                     
                     for k, (img_path, w, h) in enumerate(oversized_images):
                         try:
@@ -83,12 +84,18 @@ def check_and_resize_dataset():
                             cv2.imwrite(img_path, img_resized)
                         except: pass
                         
-                        root.after(0, lambda v=k+1: [
-                            progress.configure(value=v),
-                            lbl_count.configure(text=f"Đã sửa: {v} / {len(oversized_images)}")
-                        ])
+                        v = k + 1
+                        progress.configure(value=v)
+                        lbl_count.configure(text=f"Đã sửa: {v} / {len(oversized_images)}")
+                        if k % 5 == 0 or k == len(oversized_images) - 1:
+                            root.update()
                     
-                    messagebox.showinfo("Thành công", f"Đã resize xong {len(oversized_images)} ảnh!")
+                    # Đảm bảo hiển thị đầy đủ 100%
+                    progress.configure(value=len(oversized_images))
+                    lbl_count.configure(text=f"Đã sửa: {len(oversized_images)} / {len(oversized_images)}")
+                    root.update()
+
+                    messagebox.showinfo("Thành công", f"Đã resize xong {len(oversized_images)} ảnh!", parent=root)
                 root.destroy()
 
             root.after(0, ask_and_resize)

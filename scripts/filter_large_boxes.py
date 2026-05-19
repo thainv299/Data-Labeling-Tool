@@ -108,8 +108,12 @@ def filter_outlier_boxes(folder_path, multiplier=5.0):
             progress["value"] = i + 1
             progress_win.update()
 
+    # Đảm bảo hiển thị đầy đủ 100%
+    progress["value"] = len(label_files)
+    progress_win.update()
+
+    messagebox.showinfo("Hoàn tất", f"Đã dọn dẹp xong!\n- Số nhãn to bất thường bị xoá: {total_removed}\n- Số file đã cập nhật: {files_modified}", parent=progress_win)
     progress_win.destroy()
-    messagebox.showinfo("Hoàn tất", f"Đã dọn dẹp xong!\n- Số nhãn to bất thường bị xoá: {total_removed}\n- Số file đã cập nhật: {files_modified}")
 
 def main():
     root = tk.Tk()

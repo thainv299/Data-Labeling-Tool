@@ -10,7 +10,7 @@ class Toolbar(tk.Frame):
     def __init__(self, parent, mode_var: tk.StringVar, rename_var: tk.StringVar = None, 
                  on_load_dataset=None, on_save_labels=None, on_search=None, on_rename=None,
                  on_delete=None, on_auto_annotate=None, on_filter_boxes=None, on_clean_labels=None,
-                 on_copy_static=None, on_filter_class=None):
+                 on_copy_static=None, on_filter_class=None, on_jump=None):
         super().__init__(parent, pady=5)
 
         self.mode_var = mode_var
@@ -25,6 +25,7 @@ class Toolbar(tk.Frame):
         self._on_clean_labels = on_clean_labels
         self._on_copy_static = on_copy_static
         self._on_filter_class = on_filter_class
+        self._on_jump = on_jump
 
         self._build()
 
@@ -146,9 +147,22 @@ class Toolbar(tk.Frame):
             command=self._on_delete,
         ).pack(side=tk.LEFT, padx=10)
 
-        # --- Thông tin ảnh hiện tại ---
-        self.lbl_info = tk.Label(self, text="Chưa tải thư mục nào", font=("Arial", 10, "bold"), fg="#2980b9")
-        self.lbl_info.pack(side=tk.LEFT, padx=10)
+        # --- Thông tin ảnh hiện tại (Có thể nhập để nhảy) ---
+        index_frame = tk.Frame(self)
+        index_frame.pack(side=tk.LEFT, padx=10)
+        
+        tk.Label(index_frame, text="Ảnh:", font=("Arial", 10)).pack(side=tk.LEFT)
+        self.entry_index = tk.Entry(index_frame, width=6, justify='center', font=("Arial", 10, "bold"))
+        self.entry_index.pack(side=tk.LEFT, padx=2)
+        
+        self.lbl_total = tk.Label(index_frame, text="/ 0", font=("Arial", 10))
+        self.lbl_total.pack(side=tk.LEFT)
+
+        if self._on_jump:
+            self.entry_index.bind("<Return>", lambda e: self._on_jump(self.entry_index.get()))
+
+        self.lbl_info = tk.Label(self, text="", font=("Arial", 9), fg="gray")
+        self.lbl_info.pack(side=tk.LEFT)
 
         # --- Nút Lưu ---
         tk.Button(
@@ -159,6 +173,12 @@ class Toolbar(tk.Frame):
             fg="white",
             command=self._on_save_labels,
         ).pack(side=tk.RIGHT, padx=10)
+
+    def set_index_info(self, current: int, total: int):
+        """Cập nhật số thứ tự và tổng số ảnh."""
+        self.entry_index.delete(0, tk.END)
+        self.entry_index.insert(0, str(current + 1))
+        self.lbl_total.config(text=f"/ {total}")
 
     def set_info(self, text: str):
         """Cập nhật văn bản hiển thị thông tin ảnh."""

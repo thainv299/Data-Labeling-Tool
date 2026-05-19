@@ -29,7 +29,13 @@ class StatusBar(tk.Frame):
             self.zoom_frame, text="Zoom: 100%", font=("Arial", 9, "bold"),
             bg="#ecf0f1", fg="#2c3e50", cursor="hand2"
         )
-        self.lbl_zoom.pack(side=tk.LEFT)
+        self.lbl_zoom.pack(side=tk.RIGHT)
+
+        self.lbl_coords = tk.Label(
+            self.zoom_frame, text="", font=("Courier", 9),
+            bg="#ecf0f1", fg="#e67e22", width=15
+        )
+        self.lbl_coords.pack(side=tk.RIGHT, padx=10)
         
         if self.on_reset_zoom:
             self.lbl_zoom.bind("<Button-1>", lambda e: self.on_reset_zoom())
@@ -42,3 +48,7 @@ class StatusBar(tk.Frame):
         """Cập nhật hiển thị mức zoom (vd: 1.5 -> 150%)."""
         percent = int(level * 100)
         self.lbl_zoom.config(text=f"Zoom: {percent}%")
+
+    def set_coords(self, x: float, y: float):
+        """Cập nhật hiển thị tọa độ chuột chuẩn hóa."""
+        self.lbl_coords.config(text=f"X:{x:.3f} Y:{y:.3f}")

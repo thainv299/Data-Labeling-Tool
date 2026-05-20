@@ -5,7 +5,7 @@ import random
 class ClassPanel(tk.Frame):
     """Bảng chọn nhãn YOLO với khả năng lọc hiển thị và màu ngẫu nhiên."""
 
-    def __init__(self, parent, selected_class: tk.IntVar, on_visibility_change=None, on_select_all_class=None, on_edit_labels=None, on_classes_modified=None):
+    def __init__(self, parent, selected_class: tk.IntVar, on_visibility_change=None, on_select_all_class=None, on_edit_labels=None, on_classes_modified=None, on_class_deleted=None, on_class_id_changed=None):
         super().__init__(parent, width=200, padx=5, pady=5)
         self.pack_propagate(False) # Giữ kích thước cố định
 
@@ -14,6 +14,8 @@ class ClassPanel(tk.Frame):
         self.on_select_all_class = on_select_all_class
         self.on_edit_labels = on_edit_labels
         self.on_classes_modified = on_classes_modified
+        self.on_class_deleted = on_class_deleted
+        self.on_class_id_changed = on_class_id_changed
         
         self.classes = {}
         self.colors = {}
@@ -160,6 +162,7 @@ class ClassPanel(tk.Frame):
         """Hiển thị menu chuột phải cho một lớp nhãn."""
         menu = tk.Menu(self, tearoff=0)
         menu.add_command(label="✏️ Đổi tên nhãn...", command=lambda: self._rename_class_inline(cls_id))
+        menu.add_command(label="🔢 Đổi ID (Index)...", command=lambda: self._change_class_id_inline(cls_id))
         menu.add_command(label="❌ Xoá nhãn này", command=lambda: self._delete_class_inline(cls_id))
         menu.add_separator()
         menu.add_command(label="🔍 Chọn tất cả đối tượng nhãn này", command=lambda: self._on_select_all_class(cls_id))
@@ -215,14 +218,42 @@ class ClassPanel(tk.Frame):
         name = self.classes.get(cls_id, "")
         confirm = messagebox.askyesno(
             "Xoá nhãn", 
-            f"Bạn có chắc chắn muốn xoá nhãn '{name}'?\n"
-            "Chú ý: Xoá nhãn có thể làm lệch chỉ số nhãn của các file đã gán trước đó!"
+            f"Bạn có chắc chắn muốn xoá nhãn '{name}'?\n\n"
+            "⚠️ CHÚ Ý QUAN TRỌNG:\n"
+            "- Hành động này sẽ XOÁ TẤT CẢ các box gán nhãn thuộc lớp này trong TOÀN BỘ các file nhãn của dataset.\n"
+            "- Các lớp nhãn có chỉ số (ID) lớn hơn lớp bị xoá sẽ tự động giảm ID đi 1 đơn vị để tránh bị đứt gãy chỉ số.\n"
+            "- Hành động này không thể hoàn tác!"
         )
         if not confirm:
             return
             
-        new_classes = dict(self.classes)
-        del new_classes[cls_id]
-        
-        if self.on_classes_modified:
-            self.on_classes_modified(new_classes)
+        if self.on_class_deleted:
+            self.on_class_deleted(cls_id)
+
+    def _change_class_id_inline(self, cls_id):
+        """Đổi ID (Index) của nhãn."""
+        old_name = self.classes.get(cls_id, "")
+        new_id = simpledialog.askinteger(
+            "Đổi chỉ số nhãn (Index ID)", 
+            f"Nhập ID mới (số nguyên >= 0) cho nhãn '{old_name}' (ID cũ: {cls_id}):",
+            minvalue=0
+        )
+        if new_id is None:
+            return
+            
+        if new_id == cls_id:
+            return
+            
+        # Kiểm tra xem ID mới đã có chưa
+        if new_id in self.classes:
+            merge_confirm = messagebox.askyesno(
+                "Trùng chỉ số nhãn",
+                f"Chỉ số nhãn ID {new_id} đang thuộc về nhãn '{self.classes[new_id]}'.\n"
+                f"Bạn có muốn GỘP nhãn '{old_name}' vào nhãn '{self.classes[new_id]}' không?\n"
+                "Tất cả các box có ID cũ sẽ được đổi thành ID mới."
+            )
+            if not merge_confirm:
+                return
+
+        if self.on_class_id_changed:
+            self.on_class_id_changed(cls_id, new_id)

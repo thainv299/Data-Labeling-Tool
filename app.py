@@ -107,7 +107,9 @@ class YoloReviewerApp:
             on_visibility_change=self.on_visibility_change,
             on_select_all_class=self.on_select_all_class,
             on_edit_labels=self.on_edit_labels,
-            on_classes_modified=self.on_classes_modified_inline
+            on_classes_modified=self.on_classes_modified_inline,
+            on_class_deleted=self.on_class_deleted_handler,
+            on_class_id_changed=self.on_class_id_changed_handler
         )
         self.class_panel.pack(side=tk.LEFT, fill=tk.Y)
         self.class_panel.update_classes(DEFAULT_CLASSES)
@@ -503,6 +505,84 @@ class YoloReviewerApp:
             class_names.append(f"{cls_id}: {name}")
         self.toolbar.update_filter_classes(class_names)
         self.status_bar.set_text("Đã lưu và cập nhật danh sách nhãn thành công.")
+
+    def on_class_deleted_handler(self, deleted_cls_id):
+        """Xử lý khi người dùng chọn xoá 1 nhãn: Xoá box trong file và giảm index các class sau."""
+        if not self.dataset_dir:
+            return
+            
+        # 1. Cập nhật các file nhãn .txt thực tế
+        updated_files = self.data_manager.delete_class_from_labels(self.dataset_dir, deleted_cls_id)
+        
+        # 2. Cập nhật dictionary classes
+        old_classes = self.class_panel.classes
+        new_classes = {}
+        for cls_id, name in old_classes.items():
+            if cls_id < deleted_cls_id:
+                new_classes[cls_id] = name
+            elif cls_id > deleted_cls_id:
+                new_classes[cls_id - 1] = name
+                
+        # 3. Ghi đè file dataset.yaml
+        yaml_path = os.path.join(self.dataset_dir, "dataset.yaml")
+        import yaml
+        try:
+            with open(yaml_path, 'w', encoding='utf-8') as f:
+                yaml_data = {'names': new_classes}
+                yaml.dump(yaml_data, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
+        except Exception as e:
+            messagebox.showerror("Lỗi", f"Không thể lưu dataset.yaml: {e}")
+            return
+
+        # 4. Refresh Class Panel và UI
+        self.class_panel.update_classes(new_classes)
+        
+        class_names = []
+        for cls_id, name in sorted(new_classes.items()):
+            class_names.append(f"{cls_id}: {name}")
+        self.toolbar.update_filter_classes(class_names)
+        
+        # 5. Reload lại ảnh hiện tại để hiển thị đúng khung bounding box đã được thay đổi chỉ số
+        self.load_image()
+        
+        messagebox.showinfo("Thành công", f"Đã xoá nhãn thành công.\nĐã cập nhật {updated_files} file nhãn trong dataset.")
+
+    def on_class_id_changed_handler(self, old_id, new_id):
+        """Xử lý khi người dùng muốn đổi ID (Index) của một nhãn."""
+        if not self.dataset_dir:
+            return
+            
+        # 1. Cập nhật các file nhãn .txt thực tế
+        updated_files = self.data_manager.update_class_id_in_labels(self.dataset_dir, old_id, new_id)
+        
+        # 2. Cập nhật dictionary classes
+        new_classes = dict(self.class_panel.classes)
+        name = new_classes.pop(old_id)
+        new_classes[new_id] = name
+        
+        # 3. Ghi đè file dataset.yaml
+        yaml_path = os.path.join(self.dataset_dir, "dataset.yaml")
+        import yaml
+        try:
+            with open(yaml_path, 'w', encoding='utf-8') as f:
+                yaml_data = {'names': new_classes}
+                yaml.dump(yaml_data, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
+        except Exception as e:
+            messagebox.showerror("Lỗi", f"Không thể lưu dataset.yaml: {e}")
+            return
+
+        # 4. Refresh Class Panel và UI
+        self.class_panel.update_classes(new_classes)
+        
+        class_names = []
+        for cls_id, name in sorted(new_classes.items()):
+            class_names.append(f"{cls_id}: {name}")
+        self.toolbar.update_filter_classes(class_names)
+        
+        # 5. Reload lại ảnh hiện tại
+        self.load_image()
+        
+        messagebox.showinfo("Thành công", f"Đã thay đổi ID nhãn thành công.\nĐã cập nhật {updated_files} file nhãn trong dataset.")
 
     def jump_to_index(self, index_str):
         """Nhảy đến ảnh theo số thứ tự người dùng nhập."""

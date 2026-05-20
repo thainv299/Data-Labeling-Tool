@@ -23,6 +23,7 @@ from scripts.batch_delete_class import BatchDeleteClassApp
 from scripts.static_object_labeler import StaticObjectLabelerApp
 from scripts.check_and_resize import check_and_resize_dataset
 from scripts.delete_static_fakes import delete_labels_at_point
+from ui.label_selection_dialog import LabelSelectionDialog
 
 
 class YoloReviewerApp:
@@ -104,7 +105,9 @@ class YoloReviewerApp:
             self.root, 
             selected_class=self.selected_class,
             on_visibility_change=self.on_visibility_change,
-            on_select_all_class=self.on_select_all_class
+            on_select_all_class=self.on_select_all_class,
+            on_edit_labels=self.on_edit_labels,
+            on_classes_modified=self.on_classes_modified_inline
         )
         self.class_panel.pack(side=tk.LEFT, fill=tk.Y)
         self.class_panel.update_classes(DEFAULT_CLASSES)
@@ -191,9 +194,21 @@ class YoloReviewerApp:
             self.class_panel.update_classes(config)
             self.status_bar.set_text(f"Đã tải cấu hình từ file YAML. Chế độ: Review YOLO Dataset")
         else:
-            self.class_panel.update_classes(DEFAULT_CLASSES)
+            # Hiện bảng hỏi người dùng
+            dialog = LabelSelectionDialog(self.root, target_folder=folder)
+            self.root.wait_window(dialog)
+            if dialog.result_classes is None:
+                # Người dùng bấm hủy
+                return
+            self.class_panel.update_classes(dialog.result_classes)
+            self.status_bar.set_text(f"Đã tải cấu hình nhãn tuỳ chỉnh.")
 
         mode = self.mode_var.get()
+
+        # Nếu là chế độ gán nhãn mới, tạo thư mục labels/ nếu chưa có
+        if mode == "same_folder":
+            labels_dir = os.path.join(folder, "labels")
+            os.makedirs(labels_dir, exist_ok=True)
 
         try:
             image_paths = self.data_manager.scan_folder(folder, mode)
@@ -439,6 +454,55 @@ class YoloReviewerApp:
     def on_label_selected(self, cls_id):
         """Khi một nhãn được chọn trên Canvas, cập nhật radio button tương ứng."""
         self.selected_class.set(cls_id)
+
+    def on_edit_labels(self):
+        """Mở hộp thoại chỉnh sửa danh sách nhãn hiện tại."""
+        if not self.dataset_dir:
+            messagebox.showwarning("Thông báo", "Vui lòng tải thư mục dữ liệu trước.")
+            return
+        
+        dialog = LabelSelectionDialog(
+            self.root, 
+            target_folder=self.dataset_dir, 
+            existing_classes=self.class_panel.classes
+        )
+        self.root.wait_window(dialog)
+        
+        if dialog.result_classes is not None:
+            self.class_panel.update_classes(dialog.result_classes)
+            # Cập nhật ô lọc lớp trên toolbar
+            class_names = []
+            for cls_id, name in sorted(self.class_panel.classes.items()):
+                class_names.append(f"{cls_id}: {name}")
+            self.toolbar.update_filter_classes(class_names)
+            self.status_bar.set_text("Đã cập nhật danh sách nhãn.")
+
+    def on_classes_modified_inline(self, new_classes):
+        """Callback khi danh sách nhãn thay đổi trực tiếp (thêm/sửa/xoá) trên ClassPanel."""
+        if not self.dataset_dir:
+            messagebox.showwarning("Thông báo", "Vui lòng tải thư mục dữ liệu trước.")
+            return
+
+        # Lưu lại vào dataset.yaml
+        yaml_path = os.path.join(self.dataset_dir, "dataset.yaml")
+        import yaml
+        try:
+            with open(yaml_path, 'w', encoding='utf-8') as f:
+                yaml_data = {'names': new_classes}
+                yaml.dump(yaml_data, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
+        except Exception as e:
+            messagebox.showerror("Lỗi", f"Không thể lưu dataset.yaml: {e}")
+            return
+
+        # Cập nhật ClassPanel UI
+        self.class_panel.update_classes(new_classes)
+        
+        # Cập nhật ô lọc lớp trên toolbar
+        class_names = []
+        for cls_id, name in sorted(new_classes.items()):
+            class_names.append(f"{cls_id}: {name}")
+        self.toolbar.update_filter_classes(class_names)
+        self.status_bar.set_text("Đã lưu và cập nhật danh sách nhãn thành công.")
 
     def jump_to_index(self, index_str):
         """Nhảy đến ảnh theo số thứ tự người dùng nhập."""
@@ -749,7 +813,7 @@ class YoloReviewerApp:
     def launch_split_dataset(self):
         """Mở cửa sổ chia dataset Train/Valid/Test."""
         sub_root = tk.Toplevel(self.root)
-        DatasetSplitterApp(sub_root)
+        DatasetSplitterApp(sub_root, current_classes=self.class_panel.classes)
 
     def launch_resize_images(self):
         """Mở hộp thoại chọn thư mục rồi resize ảnh hàng loạt."""

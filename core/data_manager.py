@@ -56,8 +56,11 @@ class DataManager:
             label_path = pathlib.Path(*parts).with_suffix(".txt")
             return str(label_path)
         else:
-            # Nhãn nằm ngay cạnh ảnh
-            return os.path.splitext(img_path)[0] + ".txt"
+            # Gán nhãn mới: lưu vào thư mục labels/ cùng cấp với ảnh
+            img_dir = os.path.dirname(img_path)
+            labels_dir = os.path.join(img_dir, "labels")
+            base_name = os.path.splitext(os.path.basename(img_path))[0]
+            return os.path.join(labels_dir, base_name + ".txt")
 
     # ----------------------------------------------------------
     # Đọc/Ghi tệp nhãn
@@ -136,6 +139,97 @@ class DataManager:
             print(f"Lỗi khi xoá tệp: {e}")
             return False
 
+    def delete_class_from_labels(self, folder: str, deleted_cls_id: int) -> int:
+        """
+        Xoá tất cả các box gán nhãn thuộc class `deleted_cls_id` trong toàn bộ dataset.
+        Đồng thời giảm ID của các class > `deleted_cls_id` đi 1 đơn vị.
+        Trả về số lượng file nhãn đã được cập nhật.
+        """
+        import glob
+        updated_count = 0
+        
+        # Tìm tất cả các file .txt trong folder và các thư mục con
+        for txt_file in glob.glob(os.path.join(folder, "**", "*.txt"), recursive=True):
+            if os.path.basename(txt_file) == "classes.txt":
+                continue
+                
+            if not os.path.isfile(txt_file):
+                continue
+                
+            try:
+                modified = False
+                new_lines = []
+                with open(txt_file, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        parts = line.split()
+                        if len(parts) >= 5:
+                            cls_id = int(parts[0])
+                            if cls_id == deleted_cls_id:
+                                # Xoá box này
+                                modified = True
+                                continue
+                            elif cls_id > deleted_cls_id:
+                                # Giảm ID đi 1 đơn vị
+                                parts[0] = str(cls_id - 1)
+                                modified = True
+                            new_lines.append(" ".join(parts))
+                        else:
+                            new_lines.append(line)
+                            
+                if modified:
+                    with open(txt_file, "w", encoding="utf-8") as f:
+                        f.write("\n".join(new_lines) + "\n")
+                    updated_count += 1
+            except Exception as e:
+                print(f"Lỗi khi xử lý file nhãn {txt_file}: {e}")
+                
+        return updated_count
+
+    def update_class_id_in_labels(self, folder: str, old_id: int, new_id: int) -> int:
+        """
+        Thay đổi class ID từ `old_id` sang `new_id` trong toàn bộ các file nhãn của dataset.
+        Trả về số lượng file nhãn đã được cập nhật.
+        """
+        import glob
+        updated_count = 0
+        
+        for txt_file in glob.glob(os.path.join(folder, "**", "*.txt"), recursive=True):
+            if os.path.basename(txt_file) == "classes.txt":
+                continue
+                
+            if not os.path.isfile(txt_file):
+                continue
+                
+            try:
+                modified = False
+                new_lines = []
+                with open(txt_file, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        parts = line.split()
+                        if len(parts) >= 5:
+                            cls_id = int(parts[0])
+                            if cls_id == old_id:
+                                parts[0] = str(new_id)
+                                modified = True
+                            new_lines.append(" ".join(parts))
+                        else:
+                            new_lines.append(line)
+                            
+                if modified:
+                    with open(txt_file, "w", encoding="utf-8") as f:
+                        f.write("\n".join(new_lines) + "\n")
+                    updated_count += 1
+            except Exception as e:
+                print(f"Lỗi khi xử lý file nhãn {txt_file}: {e}")
+                
+        return updated_count
+
     # ----------------------------------------------------------
     # Dọn dẹp nhãn không có ảnh và ảnh không có nhãn
     # ----------------------------------------------------------
@@ -175,15 +269,18 @@ class DataManager:
                             deleted_txt += 1
                         except Exception: pass
         else:
-            for txt_file in glob.glob(os.path.join(folder, "*.txt")):
-                if os.path.basename(txt_file) == "classes.txt":
-                    continue
-                base = os.path.splitext(txt_file)[0]
-                if not (os.path.exists(base + ".jpg") or os.path.exists(base + ".png") or os.path.exists(base + ".jpeg")):
-                    try:
-                        os.remove(txt_file)
-                        deleted_txt += 1
-                    except Exception: pass
+            labels_dir = os.path.join(folder, "labels")
+            if os.path.isdir(labels_dir):
+                for txt_file in glob.glob(os.path.join(labels_dir, "*.txt")):
+                    if os.path.basename(txt_file) == "classes.txt":
+                        continue
+                    base_name = os.path.splitext(os.path.basename(txt_file))[0]
+                    img_in_folder = os.path.join(folder, base_name)
+                    if not (os.path.exists(img_in_folder + ".jpg") or os.path.exists(img_in_folder + ".png") or os.path.exists(img_in_folder + ".jpeg")):
+                        try:
+                            os.remove(txt_file)
+                            deleted_txt += 1
+                        except Exception: pass
 
         # --- 2. Xoá ảnh không có nhãn (Image without TXT) ---
         all_images = []
@@ -211,7 +308,7 @@ class DataManager:
     # ----------------------------------------------------------
     @staticmethod
     def load_dataset_config(folder: str) -> dict:
-        """Tìm và tải file data.yaml hoặc *.yaml trong thư mục để lấy danh sách class."""
+        """Tìm và tải file data.yaml hoặc dataset.yaml hoặc *.yaml trong thư mục để lấy danh sách class."""
         yaml_files = glob.glob(os.path.join(folder, "*.yaml"))
         if not yaml_files:
             # Thử tìm trong thư mục cha nếu folder là 'images'
@@ -220,10 +317,11 @@ class DataManager:
 
         if yaml_files:
             try:
-                # Ưu tiên data.yaml
+                # Ưu tiên dataset.yaml hoặc data.yaml
                 target_yaml = yaml_files[0]
                 for yf in yaml_files:
-                    if "data.yaml" in os.path.basename(yf).lower():
+                    basename = os.path.basename(yf).lower()
+                    if basename in ["dataset.yaml", "data.yaml"]:
                         target_yaml = yf
                         break
                 
@@ -239,3 +337,33 @@ class DataManager:
                 print(f"Lỗi khi đọc file YAML: {e}")
         
         return None
+
+    # ----------------------------------------------------------
+    # Khởi tạo dataset YOLO
+    # ----------------------------------------------------------
+    @staticmethod
+    def create_yolo_dataset(base_dir: str, classes_dict: dict) -> bool:
+        """Khởi tạo cấu trúc dataset YOLO mới (train/val/test)."""
+        try:
+            # 1. Tạo các thư mục
+            for split in ['train', 'val', 'test']:
+                os.makedirs(os.path.join(base_dir, split, 'images'), exist_ok=True)
+                os.makedirs(os.path.join(base_dir, split, 'labels'), exist_ok=True)
+            
+            # 2. Tạo dataset.yaml
+            yaml_path = os.path.join(base_dir, 'dataset.yaml')
+            yaml_data = {
+                'train': 'train/images',
+                'val': 'val/images',
+                'test': 'test/images',
+                'names': classes_dict
+            }
+            
+            with open(yaml_path, 'w', encoding='utf-8') as f:
+                yaml.dump(yaml_data, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
+                
+            return True
+        except Exception as e:
+            print(f"Lỗi khi khởi tạo dataset: {e}")
+            return False
+

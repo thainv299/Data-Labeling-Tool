@@ -8,10 +8,15 @@ from tkinter import filedialog, messagebox, ttk
 import pathlib
 
 class DatasetSplitterApp:
-    def __init__(self, root):
+    def __init__(self, root, current_classes=None):
         self.root = root
         self.root.title("Công cụ chia YOLO Dataset (Train/Val/Test)")
-        self.root.geometry("500x420")
+        self.root.geometry("500x480")
+        
+        self.current_classes = current_classes or {
+            0: 'person', 1: 'bicycle', 2: 'car', 3: 'motorcycle', 
+            4: 'license_plate', 5: 'bus', 6: 'truck'
+        }
         
         self.input_dir = tk.StringVar()
         self.output_dir = tk.StringVar()
@@ -19,6 +24,7 @@ class DatasetSplitterApp:
         self.train_pct = tk.IntVar(value=70)
         self.val_pct = tk.IntVar(value=20)
         self.test_pct = tk.IntVar(value=10)
+        self.split_mode = tk.StringVar(value="sequential") # "sequential" or "shuffle"
         
         self.setup_ui()
 
@@ -35,8 +41,8 @@ class DatasetSplitterApp:
         tk.Entry(frame_out, textvariable=self.output_dir, width=45, state='readonly').pack(side="left", padx=5)
         tk.Button(frame_out, text="Browse", command=self.browse_output).pack(side="left")
 
-        # 3. Ratio
-        frame_ratio = tk.LabelFrame(self.root, text="3. Tỷ lệ phân chia (%)", padx=10, pady=10)
+        # 3. Ratio & Mode
+        frame_ratio = tk.LabelFrame(self.root, text="3. Tỷ lệ phân chia (%) & Phương thức", padx=10, pady=10)
         frame_ratio.pack(fill="x", padx=10, pady=5)
         
         tk.Label(frame_ratio, text="Train:").grid(row=0, column=0, padx=5)
@@ -48,14 +54,21 @@ class DatasetSplitterApp:
         tk.Label(frame_ratio, text="Test:").grid(row=0, column=4, padx=5)
         tk.Entry(frame_ratio, textvariable=self.test_pct, width=8).grid(row=0, column=5, padx=5)
 
-        tk.Label(frame_ratio, text="* Lưu ý: Tổng 3 ô phải bằng tròn 100", fg="gray", font=("Arial", 8)).grid(row=1, column=0, columnspan=6, pady=(10,0))
+        tk.Label(frame_ratio, text="Phương thức:").grid(row=1, column=0, columnspan=2, pady=(10, 0), sticky="w")
+        tk.Radiobutton(frame_ratio, text="Tuần tự (Đầu/Giữa/Cuối)", variable=self.split_mode, value="sequential").grid(row=1, column=2, columnspan=2, pady=(10, 0), sticky="w")
+        tk.Radiobutton(frame_ratio, text="Ngẫu nhiên (Shuffle)", variable=self.split_mode, value="shuffle").grid(row=1, column=4, columnspan=2, pady=(10, 0), sticky="w")
+
+        tk.Label(frame_ratio, text="* Lưu ý: Tổng 3 ô phải bằng tròn 100", fg="gray", font=("Arial", 8)).grid(row=2, column=0, columnspan=6, pady=(10,0))
 
         # Start button
         self.btn_start = tk.Button(self.root, text="BẮT ĐẦU CHIA DATASET", font=("Arial", 12, "bold"), bg="#27ae60", fg="white", command=self.start_split)
-        self.btn_start.pack(pady=15)
+        self.btn_start.pack(pady=10)
         
         self.lbl_status = tk.Label(self.root, text="Sẵn sàng...", fg="blue")
         self.lbl_status.pack()
+
+        self.progress = ttk.Progressbar(self.root, length=400, mode='determinate')
+        self.progress.pack(pady=5)
 
     def browse_input(self):
         path = filedialog.askdirectory()
@@ -121,11 +134,17 @@ class DatasetSplitterApp:
 
             self.update_status(f"Tìm được {len(valid_pairs)} cặp file hợp lệ. Đang chia tỉ lệ...")
             
-            # Xáo trộn
-            random.seed(42)
-            random.shuffle(valid_pairs)
+            # Đảm bảo danh sách được sắp xếp tuần tự theo thứ tự tên ảnh/thời gian thực tế
+            valid_pairs = sorted(valid_pairs, key=lambda x: x[0])
+
+            if self.split_mode.get() == "shuffle":
+                # Xáo trộn nếu chọn chế độ ngẫu nhiên
+                random.seed(42)
+                random.shuffle(valid_pairs)
 
             total_pairs = len(valid_pairs)
+            self.root.after(0, lambda: self.progress.config(maximum=total_pairs, value=0))
+
             train_end = int(total_pairs * self.train_pct.get() / 100)
             val_end = train_end + int(total_pairs * self.val_pct.get() / 100)
 
@@ -154,11 +173,11 @@ class DatasetSplitterApp:
                     shutil.copy2(lbl_src, os.path.join(lb_out, os.path.basename(lbl_src)))
                     copied += 1
 
-                    if copied % 50 == 0:
-                        self.update_status(f"Đang copy tiến trình: {copied} / {total_pairs} files...")
+                    if copied % 10 == 0 or copied == total_pairs:
+                        self.update_progress(copied, f"Đang copy tiến trình: {copied} / {total_pairs} files...")
 
-            # Tạo file data.yaml mini cho tiện
-            yaml_path = os.path.join(out_dir, "data.yaml")
+            # Tạo file dataset.yaml
+            yaml_path = os.path.join(out_dir, "dataset.yaml")
             with open(yaml_path, "w", encoding="utf-8") as f:
                 f.write(f"path: {os.path.abspath(out_dir).replace(os.path.sep, '/')}\n")
                 f.write("train: train/images\n")
@@ -166,14 +185,21 @@ class DatasetSplitterApp:
                 if test_set:
                     f.write("test: test/images\n")
                 f.write("\n")
-                f.write("nc: 7\n")
-                f.write("names: ['person', 'bicycle', 'car', 'motorcycle', 'license_plate', 'bus', 'truck']\n")
+                f.write(f"nc: {len(self.current_classes)}\n")
+                
+                # Format names array/dict
+                import yaml
+                f.write("names:\n")
+                for k, v in sorted(self.current_classes.items()):
+                    f.write(f"  {k}: {v}\n")
 
-            self.update_status(f"Thành công! Đã chia và copy xong {total_pairs} khung hình.")
+            self.update_progress(total_pairs, f"Thành công! Đã chia và copy xong {total_pairs} khung hình.")
             self.root.after(0, lambda: messagebox.showinfo(
                 "Hoàn tất", 
                 f"Đã xuất YOLO Dataset hoàn chỉnh thành công tại:\n{out_dir}\n\n"
-                f"- Train: {len(train_set)}\n- Valid: {len(val_set)}\n- Test: {len(test_set)}"
+                f"- Phương thức: { 'Tuần tự' if self.split_mode.get() == 'sequential' else 'Ngẫu nhiên' }\n"
+                f"- Train: {len(train_set)}\n- Valid: {len(val_set)}\n- Test: {len(test_set)}",
+                parent=self.root
             ))
 
         except Exception as e:
@@ -185,6 +211,9 @@ class DatasetSplitterApp:
 
     def update_status(self, text):
         self.root.after(0, lambda: self.lbl_status.config(text=text))
+
+    def update_progress(self, val, text):
+        self.root.after(0, lambda: [self.progress.config(value=val), self.lbl_status.config(text=text)])
 
 if __name__ == "__main__":
     root = tk.Tk()

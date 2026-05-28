@@ -65,7 +65,7 @@ class YoloReviewerApp:
         tools_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Công cụ", menu=tools_menu)
 
-        tools_menu.add_command(label="Chia Dataset (Train/Valid/Test)", command=self.launch_split_dataset)
+        tools_menu.add_command(label="Chia Dataset (Train/Val/Test)", command=self.launch_split_dataset)
         tools_menu.add_command(label="Resize ảnh hàng loạt", command=self.launch_resize_images)
         tools_menu.add_command(label="Đổi Class ID hàng loạt", command=self.launch_reindex_labels)
         tools_menu.add_command(label="Đồng bộ Ảnh ↔ Nhãn (Cleanup)", command=self.launch_cleanup_dataset)

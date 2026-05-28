@@ -152,8 +152,8 @@ class DatasetSplitterApp:
             val_set = valid_pairs[train_end:val_end]
             test_set = valid_pairs[val_end:]
 
-            # Cấu trúc tạo folder: train/images, train/labels, valid/images, ...
-            sub_dirs = [("train", train_set), ("valid", val_set), ("test", test_set)]
+            # Cấu trúc tạo folder: train/images, train/labels, val/images, ...
+            sub_dirs = [("train", train_set), ("val", val_set), ("test", test_set)]
 
             copied = 0
             for split_name, dataset in sub_dirs:
@@ -181,7 +181,7 @@ class DatasetSplitterApp:
             with open(yaml_path, "w", encoding="utf-8") as f:
                 f.write(f"path: {os.path.abspath(out_dir).replace(os.path.sep, '/')}\n")
                 f.write("train: train/images\n")
-                f.write("val: valid/images\n")
+                f.write("val: val/images\n")
                 if test_set:
                     f.write("test: test/images\n")
                 f.write("\n")
@@ -198,7 +198,7 @@ class DatasetSplitterApp:
                 "Hoàn tất", 
                 f"Đã xuất YOLO Dataset hoàn chỉnh thành công tại:\n{out_dir}\n\n"
                 f"- Phương thức: { 'Tuần tự' if self.split_mode.get() == 'sequential' else 'Ngẫu nhiên' }\n"
-                f"- Train: {len(train_set)}\n- Valid: {len(val_set)}\n- Test: {len(test_set)}",
+                f"- Train: {len(train_set)}\n- Val: {len(val_set)}\n- Test: {len(test_set)}",
                 parent=self.root
             ))
 

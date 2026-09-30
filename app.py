@@ -23,6 +23,7 @@ from scripts.batch_delete_class import BatchDeleteClassApp
 from scripts.static_object_labeler import StaticObjectLabelerApp
 from scripts.check_and_resize import check_and_resize_dataset
 from scripts.delete_static_fakes import delete_labels_at_point
+from scripts.strip_optimizer import StripOptimizerApp
 from ui.label_selection_dialog import LabelSelectionDialog
 
 
@@ -76,6 +77,8 @@ class YoloReviewerApp:
         tools_menu.add_separator()
         tools_menu.add_command(label="Kiểm tra & Sửa kích thước ảnh (>640px)", command=check_and_resize_dataset)
         tools_menu.add_command(label="Xoá nhãn 'Tĩnh' tại toạ độ (Fake Positives)", command=self.enter_static_point_selection_mode)
+        tools_menu.add_separator()
+        tools_menu.add_command(label="⚡ Strip Optimizer Model (.pt) - Giảm dung lượng", command=self.launch_strip_optimizer)
 
     # ----------------------------------------------------------
     # Khởi tạo giao diện
@@ -969,3 +972,9 @@ class YoloReviewerApp:
             app.start_idx.set(self.current_idx + 1)
             app.end_idx.set(len(self.image_paths))
             app.range_mode.set("range")
+
+    def launch_strip_optimizer(self):
+        """Mở công cụ loại bỏ optimizer khỏi model .pt để giảm dung lượng."""
+        sub_root = tk.Toplevel(self.root)
+        StripOptimizerApp(sub_root)
+

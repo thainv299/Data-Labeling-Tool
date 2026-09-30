@@ -16,7 +16,7 @@ Bộ công cụ hỗ trợ **gán nhãn dữ liệu YOLO** chuyên nghiệp — 
 
 | Tính năng | Mô tả |
 |---|---|
-| 🤖 **Auto-Annotation** | 3 chế độ: Trích xuất Video, Nâng cấp Dataset (Append), Vẽ bù nhãn còn thiếu (Supplemental) |
+| 🤖 **Auto-Annotation** | Tự động gán nhãn: Trích xuất Video, Gán nhãn bổ sung (Vẽ bù thông minh theo IoU), AI Validator dọn dẹp nhãn sai |
 | ⚡ **Batch & TensorRT** | Tối ưu Batch Inference (xử lý 4 ảnh/lần) và hỗ trợ TensorRT cho tốc độ siêu nhanh |
 | 🔍 **Review & Edit** | Giao diện kéo-thả để vẽ, chỉnh sửa và xóa bounding box; hỗ trợ Zoom/Panning |
 | 📂 **Dual-Mode** | Hỗ trợ cả thư mục đơn lẫn cấu trúc YOLO chuẩn (`images/` + `labels/`) |
@@ -35,6 +35,7 @@ Bộ công cụ hỗ trợ **gán nhãn dữ liệu YOLO** chuyên nghiệp — 
 | 📐 **Resize ảnh hàng loạt** | Resize toàn bộ ảnh về kích thước chuẩn (mặc định 640px) |
 | 🔢 **Đổi Class ID hàng loạt** | Chuyển đổi Class ID trong file nhãn (VD: đổi class `0` → `4`) |
 | 🔄 **Đồng bộ Ảnh ↔ Nhãn** | Quét và xoá file ảnh/nhãn không có cặp để cân bằng dataset 1-1 |
+| ⚡ **Strip Optimizer Model** | Loại bỏ Optimizer, EMA, Scaler từ model `.pt` train dở để giảm 50-80% dung lượng cho inference |
 
 ## 📖 Hướng dẫn sử dụng
 
@@ -47,8 +48,9 @@ Bộ công cụ hỗ trợ **gán nhãn dữ liệu YOLO** chuyên nghiệp — 
 ### 2. Sử dụng Auto-Annotator (AI)
 - Nhấn nút **Auto Annotator** trên thanh công cụ.
 - **Tab 1:** Cắt video -> AI tự gán nhãn -> Lưu ảnh có vật thể.
-- **Tab 2:** Nâng cấp Dataset cũ (dùng Class Mapping để thêm lớp mới).
-- **Tab 3:** Quét toàn bộ ảnh và vẽ bù vào các vật thể AI phát hiện nhưng chưa có nhãn.
+- **Tab 2:** Gán nhãn bổ sung (vẽ bù nhãn thiếu vào dataset hiện có theo IoU, chống trùng lặp).
+- **Tab 3:** AI Validator quét và dọn dẹp nhãn sai theo model.
+- **Nút "⚡ Strip Optimizer":** Giảm nhẹ dung lượng checkpoint (.pt) đang train dở ngay trên giao diện Auto-Annotator.
 - *Tip: Nên dùng file `.engine` (TensorRT) và bật `half=True` để đạt tốc độ cao nhất.*
 
 ### 3. Chia nhỏ Dataset cho Team

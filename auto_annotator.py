@@ -8,8 +8,9 @@ from ultralytics import YOLO
 
 # Import Logic Modules from scripts
 from scripts.video_annotator import process_batch_video_logic
-from scripts.dataset_annotator import process_image_upgrade_logic, process_image_supplemental_logic, get_label_path_universal
+from scripts.dataset_annotator import process_image_supplemental_logic, get_label_path_universal
 from scripts.label_validator import validate_and_clean_labels
+from scripts.strip_optimizer import StripOptimizerApp
 
 class AutoAnnotatorApp:
     def __init__(self, root):
@@ -19,14 +20,10 @@ class AutoAnnotatorApp:
         
         self.model_path = tk.StringVar()
         
-        # Biến Tab 1
+        # Biến Tab 1: Video
         self.video_paths = []
         self.video_display = tk.StringVar(value="Chưa chọn video")
         self.output_dir = tk.StringVar()
-        
-        # Biến Tab 2
-        self.dataset_dir = tk.StringVar()
-        self.class_mapping = tk.StringVar(value="0:0, 1:1, 2:2, 3:3, 5:5, 7:6")
         
         self.setup_ui()
 
@@ -34,8 +31,16 @@ class AutoAnnotatorApp:
         # --- MODEL SELECTION ---
         frame_model = tk.LabelFrame(self.root, text="1. Chọn Model YOLO Pre-trained (.pt / .engine)", padx=10, pady=10)
         frame_model.pack(fill="x", padx=10, pady=5)
-        tk.Entry(frame_model, textvariable=self.model_path, width=58, state='readonly').pack(side="left", padx=5)
-        tk.Button(frame_model, text="Browse", command=self.browse_model).pack(side="left")
+        tk.Entry(frame_model, textvariable=self.model_path, width=44, state='readonly').pack(side="left", padx=5)
+        tk.Button(frame_model, text="Browse", command=self.browse_model).pack(side="left", padx=2)
+        tk.Button(
+            frame_model,
+            text="⚡ Strip Optimizer",
+            command=self.open_strip_optimizer,
+            bg="#27ae60",
+            fg="white",
+            font=("Arial", 9, "bold")
+        ).pack(side="left", padx=6)
 
         # --- NOTEBOOK (TABS) ---
         self.notebook = ttk.Notebook(self.root)
@@ -66,27 +71,9 @@ class AutoAnnotatorApp:
         self.lbl_status_video = tk.Label(self.tab_video, text="Sẵn sàng...", fg="blue")
         self.lbl_status_video.pack()
 
-        # ====== TAB 2: NÂNG CẤP DATASET ======
-        self.tab_dataset = tk.Frame(self.notebook)
-        self.notebook.add(self.tab_dataset, text="Nâng cấp Dataset")
-
-        frame_ds = tk.LabelFrame(self.tab_dataset, text="Chọn Thư mục Dataset", padx=10, pady=10)
-        frame_ds.pack(fill="x", padx=10, pady=5)
-        tk.Entry(frame_ds, textvariable=self.dataset_dir, width=58, state='readonly').pack(side="left", padx=5)
-        tk.Button(frame_ds, text="Browse", command=self.browse_dataset).pack(side="left")
-
-        frame_map = tk.LabelFrame(self.tab_dataset, text="Class Mapping", padx=10, pady=10)
-        frame_map.pack(fill="x", padx=10, pady=5)
-        tk.Entry(frame_map, textvariable=self.class_mapping, width=65).pack(side="left", padx=5)
-
-        self.btn_start_dataset = tk.Button(self.tab_dataset, text="BẮT ĐẦU CẬP NHẬT DATASET", font=("Arial", 12, "bold"), bg="#e67e22", fg="white", command=self.start_processing_dataset)
-        self.btn_start_dataset.pack(pady=10)
-        self.lbl_status_dataset = tk.Label(self.tab_dataset, text="Sẵn sàng...", fg="blue")
-        self.lbl_status_dataset.pack()
-
-        # ====== TAB 3: GÁN NHÃN BỔ SUNG ======
+        # ====== TAB 2: GÁN NHÃN BỔ SUNG (VẼ BÙ) ======
         self.tab_supp = tk.Frame(self.notebook)
-        self.notebook.add(self.tab_supp, text="Gán nhãn bổ sung")
+        self.notebook.add(self.tab_supp, text="Gán nhãn bổ sung (Vẽ bù)")
 
         frame_supp = tk.LabelFrame(self.tab_supp, text="Chọn Thư mục Dataset vẽ bù nhãn", padx=10, pady=10)
         frame_supp.pack(fill="x", padx=10, pady=5)
@@ -96,22 +83,27 @@ class AutoAnnotatorApp:
 
         tk.Label(self.tab_supp, text="Class Mapping (Model:Dataset):").pack(anchor="w", padx=10)
         self.class_mapping_supp = tk.Entry(self.tab_supp, width=50)
-        self.class_mapping_supp.insert(0, "0:4")
+        self.class_mapping_supp.insert(0, "")
         self.class_mapping_supp.pack(padx=10, pady=5)
 
-        tk.Label(self.tab_supp, text="Ngưỡng Confidence (VD: 0.2):").pack(anchor="w", padx=10)
+        tk.Label(self.tab_supp, text="Ngưỡng Confidence (VD: 0.25):").pack(anchor="w", padx=10)
         self.conf_supp = tk.Entry(self.tab_supp, width=15)
         self.conf_supp.insert(0, "0.25")
         self.conf_supp.pack(padx=10, pady=2)
 
-        tk.Label(self.tab_supp, text="Ví dụ: 0:4 (Lớp 0 của AI sẽ lưu thành 4 trong nhãn)", font=("Arial", 8, "italic"), fg="gray").pack(anchor="w", padx=10)
+        tk.Label(
+            self.tab_supp,
+            text="Ghi chú: Để trống Mapping nếu muốn giữ nguyên ID của model. Điền VD: 0:4 để đổi class 0 thành 4.",
+            font=("Arial", 8, "italic"),
+            fg="gray"
+        ).pack(anchor="w", padx=10)
 
         self.btn_start_supp = tk.Button(self.tab_supp, text="BẮT ĐẦU VẼ BÙ NHÃN", font=("Arial", 12, "bold"), bg="#3498db", fg="white", command=self.start_processing_supplemental)
         self.btn_start_supp.pack(pady=10)
         self.lbl_status_supp = tk.Label(self.tab_supp, text="Sẵn sàng...", fg="blue")
         self.lbl_status_supp.pack()
 
-        # ====== TAB 4: AI VALIDATOR ======
+        # ====== TAB 3: AI VALIDATOR ======
         self.tab_val = tk.Frame(self.notebook)
         self.notebook.add(self.tab_val, text="AI Validator")
 
@@ -134,6 +126,11 @@ class AutoAnnotatorApp:
         path = filedialog.askopenfilename(filetypes=[("YOLO Model", "*.pt *.engine")])
         if path: self.model_path.set(path)
 
+    def open_strip_optimizer(self):
+        """Mở công cụ Strip Optimizer."""
+        sub = tk.Toplevel(self.root)
+        StripOptimizerApp(sub, initial_model_path=self.model_path.get())
+
     def browse_video(self):
         paths = filedialog.askopenfilenames(filetypes=[("Video Files", "*.mp4 *.avi *.mkv *.mov")])
         if paths: self.video_paths = list(paths); self.video_display.set(f"Đã chọn {len(self.video_paths)} video")
@@ -141,10 +138,6 @@ class AutoAnnotatorApp:
     def browse_output(self):
         path = filedialog.askdirectory()
         if path: self.output_dir.set(path)
-        
-    def browse_dataset(self):
-        path = filedialog.askdirectory()
-        if path: self.dataset_dir.set(path)
 
     # --- PROCESSING METHODS ---
     def start_processing_video(self):
@@ -200,45 +193,26 @@ class AutoAnnotatorApp:
         finally:
             self.root.after(0, lambda: self.btn_start_video.config(state="normal", text="BẮT ĐẦU GÁN NHÃN"))
 
-    def start_processing_dataset(self):
-        # Logic Tab 2
-        mapping_dict = {}
-        try:
-            for part in self.class_mapping.get().split(','):
-                if ':' in part: k, v = part.split(':'); mapping_dict[int(k.strip())] = int(v.strip())
-        except: messagebox.showerror("Lỗi Cú Pháp", "Class Mapping sai!"); return
-
-        self.btn_start_dataset.config(state="disabled", text="ĐANG QUÉT..."); threading.Thread(target=self.process_dataset, args=(mapping_dict,), daemon=True).start()
-
-    def process_dataset(self, mapping):
-        try:
-            self.update_status_dataset("Đang tải mô hình..."); model = YOLO(self.model_path.get(), task="detect")
-            ds_dir = self.dataset_dir.get(); image_paths = []
-            for ext in ("*.jpg", "*.jpeg", "*.png"): image_paths.extend(glob.glob(os.path.join(ds_dir, "**", ext), recursive=True))
-            
-            total_added = 0; total_images = len(image_paths); batch_size = 4
-            for i in range(0, total_images, batch_size):
-                batch_paths = image_paths[i : i + batch_size]
-                results = model.predict(source=batch_paths, imgsz=640, half=True, verbose=False)
-                for j, result in enumerate(results):
-                    if process_image_upgrade_logic(batch_paths[j], result, mapping, ds_dir): total_added += 1
-                self.update_status_dataset(f"Tiến độ: {int((min(i+batch_size, total_images)/total_images)*100)}% | Đã thêm: {total_added}")
-            messagebox.showinfo("Thành công", f"Đã nâng cấp xong {total_images} ảnh.")
-        except Exception as e:
-            self.update_status_dataset("Lỗi!"); messagebox.showerror("Lỗi", str(e))
-        finally:
-            self.root.after(0, lambda: self.btn_start_dataset.config(state="normal", text="BẮT ĐẦU CẬP NHẬT DATASET"))
-
     def start_processing_supplemental(self):
-        # Logic Tab 3
+        # Logic Tab 2: Vẽ bù nhãn
         mapping_supp = {}
+        raw_mapping = self.class_mapping_supp.get().strip()
         try:
             conf_val = float(self.conf_supp.get())
-            for part in self.class_mapping_supp.get().split(','):
-                if ':' in part: k, v = part.split(':'); mapping_supp[int(k.strip())] = int(v.strip())
-        except: messagebox.showerror("Lỗi", "Mapping hoặc Confidence sai!"); return
+            if raw_mapping:
+                for part in raw_mapping.split(','):
+                    if ':' in part:
+                        k, v = part.split(':')
+                        mapping_supp[int(k.strip())] = int(v.strip())
+        except Exception:
+            messagebox.showerror("Lỗi", "Định dạng Mapping hoặc Confidence không hợp lệ!")
+            return
         
-        self.btn_start_supp.config(state="disabled", text="ĐANG XỬ LÝ..."); 
+        if not self.model_path.get() or not self.supp_dir.get():
+            messagebox.showwarning("Thiếu thông tin", "Vui lòng chọn Model và Thư mục Dataset!")
+            return
+
+        self.btn_start_supp.config(state="disabled", text="ĐANG XỬ LÝ...")
         threading.Thread(target=self.process_supplemental, args=(mapping_supp, conf_val), daemon=True).start()
 
     def process_supplemental(self, mapping, conf_val):
@@ -254,18 +228,29 @@ class AutoAnnotatorApp:
                 for j, result in enumerate(results):
                     total_added += process_image_supplemental_logic(batch_paths[j], result, mapping, ds_dir)
                 self.update_status_supp(f"Tiến độ: {int((min(i+batch_size, total_images)/total_images)*100)}% | Đã vẽ bù: {total_added}")
-            messagebox.showinfo("Thành công", f"Đã vẽ bù thêm {total_added} nhãn mới.")
+            messagebox.showinfo("Thành công", f"Đã vẽ bù thêm {total_added} nhãn mới vào dataset.")
         except Exception as e:
             self.update_status_supp("Lỗi!"); messagebox.showerror("Lỗi", str(e))
         finally:
             self.root.after(0, lambda: self.btn_start_supp.config(state="normal", text="BẮT ĐẦU VẼ BÙ NHÃN"))
 
     def start_processing_validator(self):
-        # Logic Tab 4
-        try: target_cls = int(self.target_cls_val.get()); min_conf = float(self.conf_val.get())
-        except: messagebox.showerror("Lỗi", "ID/Conf sai!"); return
-        if not messagebox.askyesno("Xác nhận", "Xoá nhãn sai?"): return
-        self.btn_start_val.config(state="disabled", text="ĐANG QUÉT..."); threading.Thread(target=self.process_validator, args=(target_cls, min_conf), daemon=True).start()
+        # Logic Tab 3: Dọn dẹp nhãn sai
+        try:
+            target_cls = int(self.target_cls_val.get())
+            min_conf = float(self.conf_val.get())
+        except Exception:
+            messagebox.showerror("Lỗi", "ID Class hoặc Confidence không hợp lệ!")
+            return
+            
+        if not self.model_path.get() or not self.val_dir.get():
+            messagebox.showwarning("Thiếu thông tin", "Vui lòng chọn Model và Thư mục Dataset!")
+            return
+
+        if not messagebox.askyesno("Xác nhận", "Bạn có chắc chắn muốn quét và dọn dẹp nhãn sai theo Model?"):
+            return
+        self.btn_start_val.config(state="disabled", text="ĐANG QUÉT...")
+        threading.Thread(target=self.process_validator, args=(target_cls, min_conf), daemon=True).start()
 
     def process_validator(self, target_cls, min_conf):
         try:
@@ -291,8 +276,6 @@ class AutoAnnotatorApp:
             self.root.after(0, lambda: self.btn_start_val.config(state="normal", text="BẮT ĐẦU DỌN DẸP NHÃN SAI"))
 
     # --- STATUS UPDATES ---
-    def update_status_dataset(self, text): 
-        if self.lbl_status_dataset.winfo_exists(): self.root.after(0, lambda: self.lbl_status_dataset.config(text=text))
     def update_status_video(self, text): 
         if self.lbl_status_video.winfo_exists(): self.root.after(0, lambda: self.lbl_status_video.config(text=text))
     def update_status_supp(self, text): 
@@ -301,4 +284,6 @@ class AutoAnnotatorApp:
         if self.lbl_status_val.winfo_exists(): self.root.after(0, lambda: self.lbl_status_val.config(text=text))
 
 if __name__ == "__main__":
-    root = tk.Tk(); app = AutoAnnotatorApp(root); root.mainloop()
+    root = tk.Tk()
+    app = AutoAnnotatorApp(root)
+    root.mainloop()

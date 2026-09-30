@@ -33,29 +33,8 @@ def get_label_path_universal(img_path, ds_dir):
     else:
         return os.path.splitext(img_path)[0] + ".txt"
 
-def process_image_upgrade_logic(img_path, result, mapping, ds_dir):
-    """Logic cho Tab 2: Nâng cấp nhãn (Append mode)."""
-    label_path = get_label_path_universal(img_path, ds_dir)
-    os.makedirs(os.path.dirname(label_path), exist_ok=True)
-
-    boxes_to_add = []
-    for res_box in result.boxes:
-        cls_ori = int(res_box.cls[0])
-        # Nếu mapping trống, tự động map 1:1 (giữ nguyên class gốc của model)
-        if not mapping or cls_ori in mapping:
-            new_cls = mapping[cls_ori] if mapping else cls_ori
-            bn = [float(x) for x in res_box.xywhn[0]]
-            boxes_to_add.append([new_cls] + bn)
-
-    if boxes_to_add:
-        with open(label_path, 'a') as f:
-            for b in boxes_to_add:
-                f.write(f"{int(b[0])} {' '.join(map(str, b[1:]))}\n")
-        return True
-    return False
-
 def process_image_supplemental_logic(img_path, result, mapping, ds_dir):
-    """Logic cho Tab 3: Vẽ bù nhãn còn thiếu (Supplemental)."""
+    """Logic vẽ bù nhãn còn thiếu (Supplemental mode - có kiểm tra IoU)."""
     label_path = get_label_path_universal(img_path, ds_dir)
     
     # Đọc nhãn cũ

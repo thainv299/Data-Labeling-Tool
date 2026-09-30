@@ -273,14 +273,18 @@ class AutoAnnotatorApp:
             ds_dir = self.val_dir.get(); image_paths = []
             for ext in ("*.jpg", "*.jpeg", "*.png"): image_paths.extend(glob.glob(os.path.join(ds_dir, "**", ext), recursive=True))
             
-            total = len(image_paths); cleaned_count = 0; removed_labels_count = 0
+            total = len(image_paths); cleaned_count = 0; removed_labels_count = 0; corrected_labels_count = 0
             for i, img_path in enumerate(image_paths):
-                if i % 10 == 0 or i == total - 1: self.update_status_val(f"Quét: {i+1}/{total} | Đã xoá: {removed_labels_count}")
+                if i % 10 == 0 or i == total - 1: 
+                    self.update_status_val(f"Quét: {i+1}/{total} | Đã xoá: {removed_labels_count} | Đã sửa: {corrected_labels_count}")
                 results = model.predict(img_path, imgsz=640, conf=min_conf, verbose=False)
                 txt_path = get_label_path_universal(img_path, ds_dir)
-                removed = validate_and_clean_labels(txt_path, results[0].boxes if results else [], target_cls, min_conf)
-                if removed > 0: removed_labels_count += removed; cleaned_count += 1
-            messagebox.showinfo("Thành công", f"Xoá xong {removed_labels_count} nhãn sai trên {cleaned_count} ảnh.")
+                removed, corrected = validate_and_clean_labels(txt_path, results[0].boxes if results else [], target_cls, min_conf)
+                if removed > 0 or corrected > 0: 
+                    removed_labels_count += removed
+                    corrected_labels_count += corrected
+                    cleaned_count += 1
+            messagebox.showinfo("Thành công", f"Đã quét xong {total} ảnh!\n- Đã xoá: {removed_labels_count} nhãn sai.\n- Đã sửa (nắn box / đổi class): {corrected_labels_count} nhãn.\n- Số ảnh có thay đổi: {cleaned_count}")
         except Exception as e:
             self.update_status_val("Lỗi!"); messagebox.showerror("Lỗi", str(e))
         finally:

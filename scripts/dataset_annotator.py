@@ -41,8 +41,9 @@ def process_image_upgrade_logic(img_path, result, mapping, ds_dir):
     boxes_to_add = []
     for res_box in result.boxes:
         cls_ori = int(res_box.cls[0])
-        if cls_ori in mapping:
-            new_cls = mapping[cls_ori]
+        # Nếu mapping trống, tự động map 1:1 (giữ nguyên class gốc của model)
+        if not mapping or cls_ori in mapping:
+            new_cls = mapping[cls_ori] if mapping else cls_ori
             bn = [float(x) for x in res_box.xywhn[0]]
             boxes_to_add.append([new_cls] + bn)
 
@@ -69,8 +70,9 @@ def process_image_supplemental_logic(img_path, result, mapping, ds_dir):
     boxes_to_add = []
     for res_box in result.boxes:
         cls_ori = int(res_box.cls[0])
-        if cls_ori in mapping:
-            new_cls = mapping[cls_ori]
+        # Nếu mapping trống, tự động map 1:1 (giữ nguyên class gốc của model)
+        if not mapping or cls_ori in mapping:
+            new_cls = mapping[cls_ori] if mapping else cls_ori
             bn = [float(x) for x in res_box.xywhn[0]] # [xc, yc, w, h]
             
             # Chỉ thêm nếu chưa có nhãn nào tại đó (IoU < 0.45)
